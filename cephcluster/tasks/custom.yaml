@@ -1,0 +1,6 @@
+---
+- name: custom cluster config
+  include_role:
+    name: shellscript
+  vars:
+    script: "{{ ceph_custom }}"

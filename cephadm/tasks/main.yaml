@@ -1,0 +1,3 @@
+---
+- shell: |
+    /usr/sbin/cephadm shell "{{ cephadm_cmd }}"

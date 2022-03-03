@@ -1,0 +1,45 @@
+---
+## This role installs ssl certificates from (vault) variable eg.
+## ssl_certs:
+##  - name: first_cert
+##    pem: |
+##      ---BEGIN CERTIFICATE---
+##      fasd32oi4jfosidsf
+##      ---END CERTIFICATE---
+##  - name: second_cert
+##    pem: |
+##      ---BEGIN CERTIFICATE---
+##      fasd32oi4jfosidsf
+##      ---END CERTIFICATE---
+
+- name: install cert files
+  copy: 
+    content: | 
+      {{ item[0][item[1]] }}
+    dest: "/etc/ssl/private/{{ item[0].name }}.{{ item[1] }}"
+    owner: root
+    group: root
+    mode: 0400
+    backup: yes
+  with_nested: 
+    - "{{ ssl_certs }}"
+    - "{{ ssl_required_files | default('pem') }}"
+  no_log: true
+  register: certfiles
+
+- name: restart webservers
+  systemd:
+    name: "{{ webserver }}"
+    state: restarted
+  when: certfiles.changed
+  loop: "{{ ssl_webservers }}"
+  loop_control:
+    loop_var: webserver
+
+## Any service users that need access to the cert files
+## should be specified in ssl_cert_users list
+- name: allow user access to cert
+  include_tasks: file_acls.yaml
+  loop: "{{ ssl_cert_users | default([]) }}"
+  loop_control:
+    loop_var: ssl_cert_user 

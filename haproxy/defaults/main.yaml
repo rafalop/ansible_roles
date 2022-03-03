@@ -1,0 +1,7 @@
+haproxy_keepalived: false
+haproxy_iptables: true
+haproxy_certs: []
+haproxy_frontend_config: ''
+haproxy_backend_config: ''
+haproxy_frontend_bind_ip: "{{ ansible_default_ipv4.address }}"
+ 

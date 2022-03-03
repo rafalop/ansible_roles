@@ -1,0 +1,41 @@
+---
+- include_role:
+    name: packages
+  vars:
+    packages_list: ["{{ 'radosgw'+ceph_package_version|default('') }}"]
+
+- name: create rgw instances
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      ret=0
+      for i in `seq 1 {{ ceph_rgw_instances_per_host }}`
+      do
+        CEPHX_USER={{ ceph_rgw_instance_prefix }}`hostname|cut -d'.' -f1`-$i
+        RGW_DIR=/var/lib/ceph/radosgw/ceph-${CEPHX_USER}
+        KEYRING=${RGW_DIR}/keyring
+        if [[ ! -f $KEYRING ]]
+        then
+          echo "Deploying RGW instance $CEPHX_USER"
+          mkdir $RGW_DIR
+          ceph auth get-or-create client.${CEPHX_USER} mon 'allow rw' osd 'allow rwx' > $KEYRING
+          chown -R ceph:ceph $RGW_DIR
+          systemctl start ceph-radosgw@${CEPHX_USER}
+          systemctl enable ceph-radosgw@${CEPHX_USER}
+          systemctl status ceph-radosgw@${CEPHX_USER} 
+          ret=1
+        else
+          echo  "RGW instance $CEPHX_USER already deployed."
+          systemctl start ceph-radosgw@${CEPHX_USER}
+        fi
+      done
+      systemctl enable ceph-radosgw.target
+
+- name: copy multisite script
+  copy:
+    src: rgw_multi.sh
+    dest: /root/rgw_multi.sh
+    mode: 0700
+    owner: root
+    group: root

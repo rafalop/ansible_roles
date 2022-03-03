@@ -1,0 +1,24 @@
+---
+- name: setup /etc/ceph dir
+  file:
+    path: /etc/ceph
+    state: directory
+  tags: configure
+
+- name: configure ceph.conf
+  copy:
+    dest: /etc/ceph/ceph.conf
+    content: |
+      {% for heading,values in ceph_config.items() %}
+      [{{ heading }}]
+      {% for key, val in values.items() %}
+      {% if key == 'mon_host' %}
+      mon_host = {% for ipaddr in val %}{{ ipaddr }}{% if not loop.last %},{% endif %}{% endfor %}
+
+      {% else %}
+      {{ key }} = {{ val }}
+      {% endif %}
+      {% endfor %}
+
+      {% endfor %}
+  tags: configure

@@ -1,0 +1,12 @@
+---
+- name: apply acl
+  acl: 
+    entity: "{{ ssl_cert_user }}"
+    path: "/etc/ssl/private/{{ item[0].name }}.{{ item[1] }}"
+    etype: user
+    permissions: r
+    state: present
+  no_log: true
+  with_nested:
+    - "{{ ssl_certs }}"
+    - "{{ ssl_required_files | default('pem') }}"

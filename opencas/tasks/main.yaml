@@ -1,0 +1,2 @@
+---
+- include_tasks: "{{ role_function }}.yaml"

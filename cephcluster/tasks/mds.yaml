@@ -1,0 +1,26 @@
+---
+- name: install ceph-mds
+  include_role:
+    name: packages
+  vars:
+    packages_list: 
+      - "{{ 'ceph-mds'+ceph_package_version|default('') }}"
+  tags: packages
+
+- include_role:
+    name: shellscript
+  vars:
+    script: | 
+      INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
+      if [[ -d $INSTANCE_DIR ]]
+      then
+        echo "Instance dir exists, looks like MDS was already deployed here."
+        exit 1
+      else
+        mkdir /var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
+        ceph auth get-or-create mds.`hostname` mon 'profile mds' mgr 'profile mds' mds 'allow *' osd 'allow *' > /var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`/keyring
+        systemctl start ceph-mds@`hostname`
+        systemctl enable ceph-mds@`hostname`
+        systemctl status ceph-mds@`hostname`
+        exit $?
+      fi

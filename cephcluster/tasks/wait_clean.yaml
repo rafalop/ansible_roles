@@ -1,0 +1,11 @@
+---
+- name: waiting for clean pgs (all)...
+  shell: "ceph pg stat -f json | jq -r '.pg_summary.num_pg_by_state[].name' | grep -v 'active+clean' | wc -l"
+  register: ceph_pgstat
+  until: ceph_pgstat.stdout | int == 0
+  changed_when: false
+  delegate_to: "{{ groups.mon[0] }}"
+  retries: "{{ ceph_waitclean_retries }}"
+  delay: "{{ ceph_waitclean_delay }}"
+  when: ceph_waitclean | bool
+

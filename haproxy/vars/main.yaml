@@ -1,0 +1,2 @@
+packages_list: "{{ ['haproxy'] if haproxy_keepalived == False else ['haproxy', 'keepalived'] }}"
+iptables_rules: "{{ haproxy_iptables_rules }}"

@@ -1,0 +1,43 @@
+---
+- name: install mon package
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - jq
+      - "{{ 'ceph-mon'+ceph_package_version }}"
+
+- include_role:
+    name: shellscript
+  vars:
+    script: |
+      ret=0
+      if ! apt list --installed | grep -q ceph-mon;then echo "Ceph not installed!";exit 100;fi
+      if [[ -d /var/lib/ceph/{{ ceph_cluster_fsid }} ]] && [[ `docker ps -q | wc -l` -gt 0 ]]
+      then
+        echo "There appears to be a containerised deploy running, aborting."
+        exit 100
+      elif [[ -f /etc/ceph/ceph.client.admin.keyring && -d /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`/store.db ]]
+      then
+        echo "There is an existing MON on this host, skipping deploy."
+      else
+        ceph auth get mon. -o /tmp/ceph.mon.keyring
+        ceph mon getmap -o /tmp/monmap
+        chown ceph:ceph -R /var/lib/ceph
+        sudo -u ceph mkdir /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`
+        sudo -u ceph ceph-mon --mkfs -i `hostname` --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
+        systemctl start ceph-mon@`hostname`
+        systemctl status ceph-mon@`hostname`
+        if [[ $? -ne 0 ]]
+        then
+          echo "Error starting ceph mon."
+          exit 100
+        fi
+        ceph mon enable-msgr2
+        ceph -s
+        ret=1
+      fi
+      systemctl enable ceph-mon@`hostname`
+      systemctl enable ceph-mon.target
+      systemctl start ceph-mon@`hostname`
+      exit $ret

@@ -1,0 +1,85 @@
+####### REPO CONFIGURATION #############
+### upstream repos
+ceph_repo_key: https://download.ceph.com/keys/release.asc
+ceph_release_name: pacific
+os_codename: bullseye
+ceph_repo: "deb https://download.ceph.com/debian-{{ ceph_release_name }}/ {{ os_codename }} main"
+
+#ceph_release_name: pacific
+#os_codename: buster
+#ceph_repo: "deb https://download.ceph.com/debian-{{ ceph_release_name }}/ {{ os_codename }} main"
+
+#ceph_release_name: nautilus
+#os_codename: buster
+#ceph_repo: "deb https://download.ceph.com/debian-{{ ceph_release_name }}/ {{ os_codename }} main"
+
+
+##### CEPH CONFIG #####
+## All these values populate ceph.conf, you can remove/add ceph.conf settings as needed
+## Specify the ceph_cluster_fsid if you want a specific one
+#ceph_cluster_fsid: "{{ ceph_customer|to_uuid }}" # Persistent fsid as long as 'ceph_fsid_string' doesn't change
+ceph_fsid_string: somedescription
+ceph_cluster_fsid: "{{ ceph_fsid_string|to_uuid }}"
+ceph_cluster_name: ceph
+ceph_config:
+  global:
+    fsid: "{{ ceph_cluster_fsid }}"
+    mon_initial_members: "{{ groups.mon[0] }}"
+    mon_host: [10.10.1.10, 10.10.1.11, 10.10.1.12]
+    auth_cluster_required: cephx
+    auth_service_required: cephx
+    auth_client_required: cephx
+    public_network: 10.10.1.0/24
+    cluster_network: 10.10.1.0/24
+    osd heartbeat grace: 30
+    osd map message max: '8'
+  mon:
+    auth_allow_insecure_global_id_reclaim: 'false'
+    leveldb cache size: 5368709120
+  osd:
+    osd max backfills: '1'
+    osd recovery max active: '1'
+    osd recovery op priority: '1'
+    #osd deep scrub interval: '2419200'
+    #osd scrub begin hour: '21'
+    #osd scrub end hour: '6'
+    osd scrub sleep: '0.1'
+    osd scrub chunk max: '5'
+    osd deep scrub stride: '1048576'
+    osd map cache size: '200'
+    osd map max advance: '150'
+    osd pg epoch persisted max stale: '150'
+    osd snap trim sleep: 1.0
+  mds:
+    mds cache memory limit: '137438953472'
+    mds standby replay: 'true'
+    mds reconnect timeout: '120'
+    mds heartbeat grace: 300
+    mds max caps per client: 256000
+  client.rgw.myrgwhost:
+    rwg_frontends: "beast port=80"
+
+## OSD deployment
+ceph_bcache: false
+# Set either of these to 0 or 'none' if you want a HDD only OSD, or HDD+DB OSD or HDD+WAL OSD
+ceph_osd_db_size: 5G
+ceph_osd_wal_size: 1G
+# Set to string (same as db and wal) if you want to use bcache
+ceph_osd_cache_size: 0
+ceph_osd_bcache_cache_mode: writeback
+ceph_osd_bcache_seq_cutoff: 8k
+# db, wal and cache specify which drive to create partitions for the osd
+ceph_osd_layout: [
+  { drive: /dev/vdc, db: /dev/vdb, wal: /dev/vdb, cache: /dev/vdb },
+  { drive: /dev/vdd, db: /dev/vdb, wal: /dev/vdb, cache: /dev/vdb },
+  { drive: /dev/vde, db: /dev/vdb, wal: /dev/vdb, cache: /dev/vdb },
+]
+
+# Just shell commands you might want to run after cluster is deployed
+# Note these are always run even on subsequent runs, but most ceph commands are idempotent
+ceph_custom: |-
+  ceph osd crush rule create-replicated replicated_rule default osd
+  ceph mgr module enable pg_autoscaler
+  ceph tell mon.* injectargs '--mon_allow_pool_delete=true'
+  ceph osd pool ls | xargs -I {} ceph osd pool set {} pg_autoscale_mode on
+

@@ -1,0 +1,11 @@
+---
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+
+- name: restart haproxy
+  systemd:
+    name: haproxy
+    state: restarted
+

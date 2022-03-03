@@ -1,0 +1,182 @@
+---
+- name: install osd package
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - "{{ 'ceph-osd'+ceph_package_version }}"
+      - jq
+      - uuid-runtime
+      - curl
+      - git
+
+- block:
+  - name: clear opencas lvm config
+    lineinfile:
+      line: "{{ item }}"
+      insertafter: '^devices.*{$'
+      path: /etc/lvm/lvm.conf
+      state: absent
+    with_items:
+      - 'types = [ "cas", 16 ]'
+      - 'filter = ["a|/dev/sd[b-z][0-9]+|", "r|/dev/sd[b-z]|"]'
+  when: not ceph_opencas|bool
+
+- block:
+    - name: install bcachectl
+      shell: 
+        cmd: |
+          curl https://raw.githubusercontent.com/rafalop/bcachectl/main/scripts/install_bcachectl.sh | bash -s -- reinstall
+          cp /tmp/.bcachectl_install/bcachectl/scripts/ceph-bcache.sh /usr/local/bin/
+          chmod u+x /usr/local/bin/ceph-bcache.sh
+        executable: /bin/bash
+    - include_role:
+        name: packages
+      vars:
+        packages_list: [bcache-tools, parted]
+    - name: load bcache kmod
+      modprobe:
+        name: bcache
+  when: ceph_bcache|bool
+
+- name: prepare osds
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      if ! timeout 5 ceph -s
+      then
+        echo "Cannot connect to ceph cluster, not deploying OSDs."
+        exit 100
+      fi
+      if ! timeout 5 ceph -n client.bootstrap-osd -k /var/lib/ceph/bootstrap-osd/{{ ceph_cluster_name }}.keyring -s
+      then
+        echo "Cannot connect to ceph cluster using bootstrap-osd key."
+        exit 100
+      fi
+      ret=0
+      {%  for osd in ceph_osd_layout %}
+      {%    if '/dev/' not in osd.drive %}
+      {%      set prefix = '/dev/' %}
+      {%    else %}
+      {%      set prefix = '' %}
+      {%    endif %}
+      # Cases without cache (use ceph-volume directly)
+      {%    if ceph_osd_cache_size == 0 or ceph_osd_cache_size == 'none' or not ceph_bcache|bool %}
+      {%      set deploy_cmd = 'ceph-volume lvm create --data ' + prefix+osd.drive  %}
+      # wal == 0 && db == 0 && cache == 0 (all not set, plain hdd OSD) do nothing else
+      # db != 0 (db specified)
+      {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
+      {%        set deploy_cmd = deploy_cmd+ ' --block.db ' + prefix+osd.db + ' --block.db-size ' + ceph_osd_db_size %}
+      {%      endif %}
+      # wal != 0 (wal specified)
+      {%      if ceph_osd_wal_size != 0 and ceph_osd_wal_size != 'none' %}
+      {%        set deploy_cmd = deploy_cmd + ' --block.wal ' + prefix+osd.wal + ' --block.wal-size ' + ceph_osd_wal_size %}
+      {%      endif %}
+      # Cases with cache (use ceph-bcache.sh)
+      {%    else %}
+      {%      set deploy_cmd = 'ceph-bcache.sh --doit --cache-mode ' + ceph_osd_bcache_cache_mode + ' --seq-cutoff ' + ceph_osd_bcache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size %}
+      # db != 0 (db specified)
+      {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
+      {%        set deploy_cmd = deploy_cmd + ' --db-device ' + prefix+osd.db + ' --db-size ' + ceph_osd_db_size %} 
+      {%      endif %}
+      # wal != 0 (wal specified)
+      {%      if ceph_osd_wal_size != 0 and ceph_osd_wal_size != 'none' %}
+      {%        set deploy_cmd = deploy_cmd + ' --wal-device ' + prefix+osd.wal + ' --wal-size ' + ceph_osd_wal_size %}
+      {%      endif %}
+      {%    endif %}
+      echo "Deploy command: {{ deploy_cmd }}"
+      {{ deploy_cmd }}
+      {%  endfor %}
+  when: not ceph_opencas|bool
+
+- block: 
+  - name: install opencas
+    include_role:
+      name: opencas
+    vars:
+      role_function: install
+  - name: allow cas devs lvm
+    lineinfile:
+      line: 'types = [ "cas", 16 ]'
+      insertafter: '^devices.*{$'
+      path: /etc/lvm/lvm.conf
+  - name: allow cas devs lvm
+    lineinfile:
+      line: 'filter = ["a|/dev/sd[b-z][0-9]+|", "r|/dev/sd[b-z]|"]'
+      insertafter: '^devices.*{$'
+      path: /etc/lvm/lvm.conf
+  - name: prepare osds (opencas)
+    include_role:
+      name: shellscript
+    vars:
+      script: |
+        ret=0
+        if [[ `ps -ef | grep ceph-osd | grep -v grep | wc -l` -gt 0 ]] || [[ `grep '/var/lib/ceph/osd' /proc/mounts` ]]
+        then
+          echo "OSDs are running or mounted, not doing anything."
+          exit $ret
+        fi
+        # assume nothing is deployed
+        # create wal partition
+
+        {% for drive in ceph_opencas_drives %}
+        short_name=`echo {{ drive.dev }} | cut -d'/' -f3`
+        # create cache and wal parts for the osd
+        partx -a /dev/{{ drive.wal }}
+        partx -a /dev/{{ drive.cache }}
+        sgdisk -n 0:0:+{{ ceph_opencas_wal_size }} -c 0:${short_name}_wal /dev/{{ drive.wal }}
+        partx -a /dev/{{ drive.wal }}
+        sleep 1
+        sgdisk -n 0:0:+{{ ceph_opencas_cache_size }} -c 0:${short_name}_cache /dev/{{ drive.cache }}
+        partx -a /dev/{{ drive.cache }}
+        sleep 2
+        if ! blkid -o device -t PARTLABEL="${short_name}_cache"
+        then
+          echo "Can't find partition for cache. Dumping output:"
+          blkid
+          exit 100
+        fi
+        if ! blkid -o device -t PARTLABEL="${short_name}_wal"
+        then
+          echo "Can't find partition for wal. Dumping output:"
+          blkid
+          exit 100
+        fi
+
+        # deploy the osd
+        waldev=`blkid -t PARTLABEL="${short_name}_wal" -o device`
+        #vg=`pvs | grep {{ drive.dev }} | awk '{print $2}'`
+        #lv=`lvs $vg | grep $vg | awk '{print $1}'`
+        #coredev="/dev/disk/by-id/dm-name-$(echo ${vg} | sed -e 's/\-/\-\-/g')-$(echo ${lv} | sed -e 's/\-/\-\-/g')"
+
+        # gather osd info
+        cachedev=`blkid -t PARTLABEL="${short_name}_cache" -o device | cut -d'/' -f3`
+        cachedev_id=`ls -l /dev/disk/by-id | grep wwn | grep $cachedev | sed -e 's/.*\ \(wwn.*\)\ \->.*/\1/g'`
+        coredev_id=`ls -l /dev/disk/by-id | grep wwn | grep $short_name | sed -e 's/.*\ \(wwn.*\)\ \->.*/\1/g'`
+        coredev="/dev/disk/by-id/${coredev_id}"
+        echo "shortname: $short_name"
+        echo "cachedev: $cachedev"
+        echo "waldev: $waldev"
+        echo "cachedev_id: $cachedev_id"
+        echo "coredev: $coredev"
+
+        # set up cache
+        casadm -S -d /dev/disk/by-id/${cachedev_id} --force
+        cas_cache_id=`casadm -L -o csv | grep $cachedev | cut -d',' -f2`
+        casadm -A -d ${coredev} -i ${cas_cache_id}
+        realdev=`readlink -f $coredev`
+        cas_core_id=`casadm -L -o csv | grep $realdev | cut -d',' -f2`
+        cas_dev=`casadm -L -o csv | grep core | grep $realdev | cut -d',' -f6`
+
+        echo "Creating osd with --block.wal $waldev and --data $cas_dev"
+        wipefs -a $cas_dev
+        ceph-volume lvm create --block.wal ${waldev} --data $cas_dev
+
+        casadm -X -n seq-cutoff -i ${cas_cache_id} -j ${cas_core_id} -p always -t {{ ceph_opencas_seq_cutoff_kb|default('1024') }}
+        casadm -Q -c wb -i ${cas_cache_id}
+        ret=1 
+        {% endfor %}
+        exit $ret
+  when: ceph_opencas|bool
+

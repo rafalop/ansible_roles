@@ -1,0 +1,27 @@
+---
+- include_role:
+    name: shellscript
+  vars:
+    executable: /bin/bash
+    script: |
+      if ! which casadm
+      then
+        if [[ ! -d open-cas-linux ]]
+        then
+          apt install -y git
+          git clone https://github.com/Open-CAS/open-cas-linux
+          cd open-cas-linux
+          git submodule update --init
+          cd ..
+        fi
+        cd open-cas-linux
+        apt install -y make gcc linux-headers-4.19.0-16-all
+        ./configure
+        make
+        make install
+        ret=1
+      else
+        ret=0
+      fi
+      casadm -V
+      exit $ret

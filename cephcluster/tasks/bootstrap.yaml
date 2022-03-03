@@ -1,0 +1,52 @@
+---
+- name: install mon package
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - jq
+      - "{{ 'ceph-mon'+ceph_package_version }}"
+
+- include_role:
+    name: shellscript
+  vars:
+    script: |
+      if ! apt list --installed | grep -q ceph-mon;then echo "Ceph not installed!";exit 100;fi
+      if [[ -d /var/lib/ceph/{{ ceph_cluster_fsid }} ]] && [[ `docker ps -q | wc -l` -gt 0 ]]
+      then
+        echo "There appears to be a containerised deploy running, aborting."
+        exit 100
+      elif [[ -f /etc/ceph/ceph.client.admin.keyring && -d /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`/store.db ]]
+      then
+        echo "There is an existing cluster defined, skipping bootstrap."
+        ceph -s
+      else
+        ceph-authtool --create-keyring /tmp/ceph.mon.keyring --gen-key -n mon. --cap mon 'allow *'
+        ceph-authtool --create-keyring /etc/ceph/ceph.client.admin.keyring --gen-key -n client.admin --cap mon 'allow *' --cap osd 'allow *' --cap mds 'allow *' --cap mgr 'allow *'
+        cat /etc/ceph/ceph.client.admin.keyring
+        ceph-authtool --create-keyring /var/lib/ceph/bootstrap-osd/ceph.keyring --gen-key -n client.bootstrap-osd --cap mon 'profile bootstrap-osd' --cap mgr 'allow r'
+        ceph-authtool /tmp/ceph.mon.keyring --import-keyring /etc/ceph/ceph.client.admin.keyring
+        ceph-authtool /tmp/ceph.mon.keyring --import-keyring /var/lib/ceph/bootstrap-osd/ceph.keyring
+        chown ceph:ceph /tmp/ceph.mon.keyring
+        monmaptool --create --add `hostname` {{ ceph_config.global.mon_host[0] }} --fsid {{ ceph_config.global.fsid }} /tmp/monmap
+        chown ceph:ceph -R /var/lib/ceph
+        sudo -u ceph mkdir /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`
+        sudo -u ceph ceph-mon --mkfs -i `hostname` --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
+        systemctl enable ceph-mon@`hostname`
+        systemctl start ceph-mon@`hostname`
+        systemctl status ceph-mon@`hostname`
+        if [[ $? -ne 0 ]]
+        then
+          exit 100
+        fi
+        if ! timeout 5 ceph -s
+        then
+          echo "Issue connecting to created cluster."
+          exit 100
+        fi
+        ceph mon enable-msgr2
+        ceph osd crush rule rm replicated_rule
+        ceph -s
+        exit 1
+      fi
+      exit 0

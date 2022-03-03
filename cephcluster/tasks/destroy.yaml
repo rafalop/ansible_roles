@@ -1,0 +1,140 @@
+---
+## Destroy any containerised configuration
+- name: destroy containers
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      echo "Removing existing containers."
+      systemctl stop ceph.target
+      systemctl stop docker.socket
+      systemctl stop docker
+      rm -f /etc/systemd/system/ceph-{{ ceph_cluster_fsid }}*
+      systemctl daemon-reload
+      systemctl start docker
+  when: destroy_existing|bool
+
+## Destroy any mon configuration
+- name: destroy mons
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      echo "Removing existing cluster."
+      systemctl stop ceph.target
+      systemctl stop ceph-mon@`hostname`
+      systemctl stop ceph-mgr@`hostname`
+      systemctl daemon-reload
+      rm -rf /var/lib/ceph/mon/*
+      rm -rf /var/lib/ceph/mgr/*
+      rm -rf /var/lib/ceph/{{ ceph_cluster_fsid }}
+      rm -rf /etc/ceph/ceph.client.admin.keyring
+      rm -f /tmp/ceph.mon.keyring
+      rm -f /etc/ceph/ceph.conf
+      rm -f /tmp/monmap
+      rm -f /var/log/ceph/ceph-mon*
+      rm -f /var/log/ceph/ceph-mgr*
+      rm -f /var/log/ceph/ceph.log*
+      {% if destroy_remove_packages %}
+      apt -y remove ceph*
+      apt -y autoremove
+      {% endif %}
+  when: 
+    - destroy_existing|bool
+    - "'mon' in group_names"
+
+## Destroy osd configuration
+- block:
+    - name: 'remove existing ceph osds and logical vols'
+      include_role: 
+        name: shellscript
+      vars:
+        script: |
+          systemctl stop ceph.target
+          pkill ceph-osd
+          if timeout 3 ceph -s
+          then
+            df -h | grep ceph | cut -d'-' -f2 | xargs -I {} bash -c "systemctl stop ceph-osd@{};ceph osd down osd.{};ceph osd crush remove osd.{};ceph auth del osd.{};ceph osd rm osd.{}"
+          else
+            df -h | grep ceph | cut -d'-' -f2 | xargs -I {} bash -c "systemctl stop ceph-osd@{}"
+          fi
+          echo "Stopping any opencas devs."
+          casadm -L -o csv | grep Running | cut -f2 -d',' | xargs -I {} casadm -T -i {}
+          df -h | grep ceph | awk '{print $6}' | xargs -I {} umount {}
+          lvs | grep ceph | awk '{print "lvremove -f " $2"/"$1}' | bash
+          vgs | grep ceph | awk '{print "vgremove -f " $1}' | bash
+          dmsetup ls | grep ceph | awk '{print $1}' | xargs -I {} echo "dmsetup remove {}" | bash
+          vgscan
+          lvscan
+          echo "Destroying any bcache devices."
+          blkid -t TYPE="bcache" -o device | xargs -I {} bash -c 'bcachectl unregister {};bcachectl stop {};sleep 1;dd if=/dev/zero of={} bs=1M count=1 conv=sync'
+
+    - name: 'wipe drives'
+      include_role:
+        name: shellscript
+      vars:
+        script: |
+          tracker=$(mktemp)
+          {%  for osd in ceph_osd_layout %}
+          {%    for key, dev in osd.items() %}
+          if ! grep -q {{ dev }} $tracker
+          then
+            echo "Wiping {{ dev }}"
+            sgdisk -Z {{ dev }}
+            partx -a {{ dev }}
+            echo {{ dev }} >> $tracker
+          else
+            echo "already wiped {{ dev }}, skipping."
+          fi
+          {%    endfor %}
+          {%  endfor %}
+          rm -f $tracker
+        failed_when: false
+    - name: wipe logs and systemd units
+      shell: |
+        rm -f /var/log/ceph/ceph-osd*
+        rm -f /var/log/ceph/ceph-volume*
+        rm -f /etc/systemd/system/multi-user.target.wants/ceph-volume*
+#    - name: 'remove old osds and wipe drives'
+#      shell: |
+#        sgdisk -Z {{ item }}
+#        partx -a {{ item }}
+#      failed_when: false  
+#      with_items: "{{ ceph_db_devices|default([]) }}"
+  when: 
+    - "'osd' in group_names"
+    - destroy_existing|bool
+
+## Destroy MDS
+- include_role:
+    name: shellscript
+  vars:
+    script: | 
+      INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
+      systemctl stop ceph-mds.target
+      systemctl stop ceph-mds@`hostname`
+      systemctl disable ceph-mds@`hostname`
+      rm -rf $INSTANCE_DIR
+      rm -f /var/log/ceph/ceph-mds*
+  when: 
+    - destroy_existing|bool
+    - "'mds' in group_names"
+
+## Destroy RGW
+- name: destroy existing RGW
+  shell: |
+    systemctl stop ceph-radosgw.target
+    for i in `seq 1 {{ ceph_rgw_instances_per_host }}`
+    do
+      CEPHX_USER={{ ceph_rgw_instance_prefix }}`hostname|cut -d'.' -f1`-$i
+      systemctl stop ceph-radosgw@${CEPHX_USER}
+      pkill radosgw
+      rm -rf /var/lib/ceph/radosgw/ceph-${CEPHX_USER}
+      timeout 3 ceph auth rm client.${CEPHX_USER}
+      rm -f /var/log/ceph/ceph-client.rgw*
+    done
+  failed_when: false
+  when: 
+    - destroy_existing|bool
+    - "'rgw' in group_names"
+

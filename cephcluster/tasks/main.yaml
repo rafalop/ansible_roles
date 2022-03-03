@@ -1,0 +1,8 @@
+---
+- include_tasks: configure.yaml
+  tags: configure
+
+- include_tasks: "{{ role_function }}.yaml"
+  tags: build
+
+
