@@ -1,0 +1,147 @@
+---
+- name: prepare hosts
+  hosts: 'all'
+  become: true
+  tasks:
+    - block:
+        - hostname:
+            name: "{{ inventory_hostname.split('.')[0] }}"
+      rescue:
+        - shell: |
+            hostname {{ inventory_hostname.split('.')[0] }}
+            echo {{ inventory_hostname.split('.')[0] }} > /etc/hostname
+          failed_when: false
+    - include_role:
+        name: packages
+      vars:
+        packages_list:  
+          - gnupg
+          - jq
+          - python-setuptools
+    - apt_key:
+        url: "{{ ceph_repo_key }}"
+        state: present
+      when: ceph_repo_key is defined
+    - apt_repository:
+        repo: "{{ ceph_repo }}"
+        filename: ceph
+        update_cache: true
+  tags: prep
+
+- name: destroy any non mon daemon configuration
+  hosts: all:!mon
+  become: true
+  roles:
+    - cephcluster
+  vars:
+    role_function: destroy
+  tags: destroy
+
+- name: destroy mon and cluster
+  hosts: mon
+  become: true
+  roles:
+    - cephcluster
+  vars:
+    role_function: destroy
+  tags: destroy
+
+- name: bootstrap cluster
+  hosts: "{{ groups.mon[0] }}"
+  become: true
+  roles:
+    - cephcluster
+  vars: 
+    role_function: bootstrap
+
+- name: deploy mons and mgrs
+  hosts: mon
+  become: true
+  roles:
+    - {role: cephcluster, role_function: mon}
+    - {role: cephcluster, role_function: mgr}
+
+- name: push admin key to cluster nodes
+  hosts: ceph_cluster:rgw
+  become: true
+  tasks:
+    - name: get client.admin 
+      shell: |
+        ceph auth get client.admin | head -2
+      register: client_admin
+      delegate_to: "{{ groups.mon[0] }}"
+      run_once: true
+
+    - name: push client.admin
+      copy:
+        dest: /etc/ceph/ceph.client.admin.keyring
+        content: |
+          {{ client_admin.stdout }}
+        mode: 0600
+        owner: root
+        group: root
+
+- name: deploy osds
+  hosts: osd
+  become: true
+  serial: 1 # ensures osd numbers are not all over the place
+  tasks:
+    - name: get osd bootstrap key
+      shell: |
+        ceph auth get client.bootstrap-osd | head -2
+      register: client_bootstrap_osd
+      delegate_to: "{{ groups.mon[0] }}"
+      run_once: true
+
+    - name: push osd bootstrap key
+      copy:
+        dest: "{{ item }}"
+        content: |
+          {{ client_bootstrap_osd.stdout }}
+        mode: 0600
+        owner: root
+        group: root
+      with_items:
+        - /var/lib/ceph/bootstrap-osd/{{ ceph_cluster_name }}.keyring
+        - /etc/ceph/{{ ceph_cluster_name }}.client.bootstrap-osd.keyring
+    - include_role:
+        name: cephcluster
+      vars:
+        role_function: "{{ item }}"
+      with_items:
+        - wait_clean
+        - osd
+
+- name: deploy MDSs
+  hosts: mds
+  become: true
+  roles:
+    - cephcluster
+  vars:
+    role_function: mds 
+  tags: build,mds
+
+- name: deploy RGWs
+  hosts: rgw
+  become: true
+  roles:
+    - cephcluster
+  vars:
+    role_function: rgw 
+  tags: build,rgw
+
+- name: custom cluster config
+  hosts: "{{ groups.mon[0] }}"
+  become: true
+  roles:
+    - cephcluster
+  vars:
+    role_function: custom
+  tags: custom
+
+- name: configure haproxy
+  hosts: haproxy
+  become: true
+  roles:
+    - haproxy
+  tags: haproxy
