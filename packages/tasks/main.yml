@@ -30,13 +30,15 @@
 
 - name: (debian) install requested packages - {{ packages_list }}
   apt:
-    deb: "{{ item }}"
+    deb: "{{ pkg }}"
     state: "{{ packages_state | default('present') }}"
   register: packages_change
   when: 
     - (ansible_os_family == 'Debian' or  ansible_os_family == 'SoftIron GNU/Linux')
     - packages_deb
-  with_items: "{{ packages_list }}"
+  loop: "{{ packages_list }}"
+  loop_control:
+    loop_var: pkg
 
 - name: (debian) remove unwanted packages - {{ packages_unwanted }}
   apt:
