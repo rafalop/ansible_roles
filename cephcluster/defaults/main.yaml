@@ -1,4 +1,5 @@
-# Change this to =version for debian, or -version for RH
+# Specify this var in groupvars/hostvars as '=<version>' for debian, or '-<version>' for RH
+# if you want a particular ceph version. eg. ceph_pacakge_version: '=14.2.22-blah'
 ceph_package_version: ""
 destroy_existing: false
 destroy_remove_packages: false
