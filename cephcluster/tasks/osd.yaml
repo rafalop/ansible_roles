@@ -1,5 +1,5 @@
 ---
-- name: install osd package
+- name: install packages
   include_role:
     name: packages
   vars:
@@ -10,16 +10,38 @@
       - curl
       - git
 
+- name: get osd bootstrap key
+  shell: |
+    ceph auth get client.bootstrap-osd | head -2
+  register: client_bootstrap_osd
+  delegate_to: "{{ groups.mon[0] }}"
+
+- name: push osd bootstrap key
+  copy:
+    dest: "{{ keyring_target }}"
+    content: |
+      {{ client_bootstrap_osd.stdout }}
+    mode: 0600
+    owner: root
+    group: root
+  loop:
+    - /var/lib/ceph/bootstrap-osd/{{ ceph_cluster_name }}.keyring
+    - /etc/ceph/{{ ceph_cluster_name }}.client.bootstrap-osd.keyring
+  loop_control:
+    loop_var: keyring_target
+
 - block:
   - name: clear opencas lvm config
     lineinfile:
-      line: "{{ item }}"
+      line: "{{ lvm_line }}"
       insertafter: '^devices.*{$'
       path: /etc/lvm/lvm.conf
       state: absent
-    with_items:
+    loop:
       - 'types = [ "cas", 16 ]'
       - 'filter = ["a|/dev/sd[b-z][0-9]+|", "r|/dev/sd[b-z]|"]'
+    loop_control:
+      loop_var: lvm_line
   when: not ceph_opencas|bool
 
 - block:
@@ -39,6 +61,31 @@
         name: bcache
   when: ceph_bcache|bool
 
+## This stuff works out the OSD ids
+- set_fact:
+    groups_pos: "{{ lookup('ansible.utils.index_of', groups.osd, 'eq', inventory_hostname) }}"
+- set_fact:
+    startcounter: 0
+  delegate_to: localhost
+- set_fact:
+    startcounter: "{{ startcounter|int + hostvars[groups.osd[item]].ceph_osd_layout|length }}"
+  loop: "{{ range(0, (groups_pos|int), 1)|list }}"
+  loop_control:
+    extended: yes
+- debug:
+    msg: "osd_id: {{ startcounter|int + ansible_loop.index-1 }}"
+  loop: "{{ ceph_osd_layout }}"
+  loop_control:
+    extended: yes
+
+## Output flash settings
+- debug:
+    msg:
+      - "ceph_osd_cache_size: {{ ceph_osd_cache_size }}"
+      - "ceph_osd_db_size: {{ ceph_osd_db_size }}"
+      - "ceph_osd_wal_size: {{ ceph_osd_wal_size }}"
+
+## Actual osd deployment
 - name: prepare osds
   include_role:
     name: shellscript
@@ -56,6 +103,7 @@
       fi
       ret=0
       {%  for osd in ceph_osd_layout %}
+      {%    set osd_id = startcounter|int + loop.index - 1 %}
       {%    if '/dev/' not in osd.drive %}
       {%      set prefix = '/dev/' %}
       {%    else %}
@@ -63,7 +111,7 @@
       {%    endif %}
       # Cases without cache (use ceph-volume directly)
       {%    if ceph_osd_cache_size == 0 or ceph_osd_cache_size == 'none' or not ceph_bcache|bool %}
-      {%      set deploy_cmd = 'ceph-volume lvm create --data ' + prefix+osd.drive  %}
+      {%      set deploy_cmd = 'ceph-volume lvm create --data ' + prefix+osd.drive  + ' --osd-id=' + osd_id|string %}
       # wal == 0 && db == 0 && cache == 0 (all not set, plain hdd OSD) do nothing else
       # db != 0 (db specified)
       {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
@@ -75,7 +123,7 @@
       {%      endif %}
       # Cases with cache (use ceph-bcache.sh)
       {%    else %}
-      {%      set deploy_cmd = 'ceph-bcache.sh --doit --cache-mode ' + ceph_osd_bcache_cache_mode + ' --seq-cutoff ' + ceph_osd_bcache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size %}
+      {%      set deploy_cmd = 'ceph-bcache.sh --doit --cache-mode ' + ceph_osd_bcache_cache_mode + ' --seq-cutoff ' + ceph_osd_bcache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size + ' --cv-args --osd-id=' + osd_id|string %}
       # db != 0 (db specified)
       {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
       {%        set deploy_cmd = deploy_cmd + ' --db-device ' + prefix+osd.db + ' --db-size ' + ceph_osd_db_size %} 
