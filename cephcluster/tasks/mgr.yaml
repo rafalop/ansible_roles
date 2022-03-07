@@ -17,6 +17,7 @@
         mkdir /var/lib/ceph/mgr/{{ ceph_cluster_name }}-`hostname`
         ceph auth get-or-create mgr.`hostname -s` mon 'allow profile mgr' osd 'allow *' mds 'allow *' -o /var/lib/ceph/mgr/{{ ceph_cluster_name }}-`hostname`/keyring
         chown -R ceph:ceph /var/lib/ceph/mgr/{{ ceph_cluster_name }}-`hostname`
+        ln -s /lib/systemd/system/ceph-mgr@.service /etc/systemd/system/multi-user.target.wants/ceph-mgr@`hostname`.service
         ret=1
       fi
       systemctl enable ceph-mgr.target

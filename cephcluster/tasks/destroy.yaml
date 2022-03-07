@@ -20,18 +20,18 @@
     name: shellscript
   vars:
     script: |
-      echo "Removing existing cluster."
-      systemctl stop ceph.target
+      echo "Removing existing mons."
+      systemctl stop ceph-mon.target
       systemctl stop ceph-mon@`hostname`
-      systemctl stop ceph-mgr@`hostname`
       systemctl daemon-reload
       rm -rf /var/lib/ceph/mon/*
-      rm -rf /var/lib/ceph/mgr/*
       rm -rf /var/lib/ceph/{{ ceph_cluster_fsid }}
       rm -rf /etc/ceph/ceph.client.admin.keyring
       rm -f /tmp/ceph.mon.keyring
       rm -f /etc/ceph/ceph.conf
       rm -f /tmp/monmap
+      rm -f /etc/systemd/system/multi-user.target.wants/ceph-mon*
+      rm -f /etc/systemd/system/multi-user.target.wants/ceph-mgr*
       rm -f /var/log/ceph/ceph-mon*
       rm -f /var/log/ceph/ceph-mgr*
       rm -f /var/log/ceph/ceph.log*
@@ -39,9 +39,32 @@
       apt -y remove ceph*
       apt -y autoremove
       {% endif %}
-  when: 
+  when:
     - destroy_existing|bool
     - "'mon' in group_names"
+
+- name: destroy mgrs
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      echo "Removing existing mgrs."
+      systemctl stop ceph-mgr.target
+      systemctl stop ceph-mgr@`hostname`
+      systemctl daemon-reload
+      rm -rf /var/lib/ceph/mgr/*
+      rm -rf /var/lib/ceph/{{ ceph_cluster_fsid }}
+      rm -rf /etc/ceph/ceph.client.admin.keyring
+      rm -f /etc/ceph/ceph.conf
+      rm -f /etc/systemd/system/multi-user.target.wants/ceph-mgr*
+      rm -f /var/log/ceph/ceph-mgr*
+      {% if destroy_remove_packages %}
+      apt -y remove ceph*
+      apt -y autoremove
+      {% endif %}
+  when:
+    - destroy_existing|bool
+    - "'mgr' in group_names"
 
 ## Destroy osd configuration
 - block:

@@ -33,6 +33,7 @@
           echo "Error starting ceph mon."
           exit 100
         fi
+        ln -s /lib/systemd/system/ceph-mon@.service /etc/systemd/system/multi-user.target.wants/ceph-mon@`hostname`.service
         ceph mon enable-msgr2
         ceph -s
         ret=1
