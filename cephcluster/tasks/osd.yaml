@@ -72,11 +72,11 @@
   loop: "{{ range(0, (groups_pos|int), 1)|list }}"
   loop_control:
     extended: yes
-- debug:
-    msg: "osd_id: {{ startcounter|int + ansible_loop.index-1 }}"
-  loop: "{{ ceph_osd_layout }}"
-  loop_control:
-    extended: yes
+#- debug:
+#    msg: "osd_id: {{ startcounter|int + ansible_loop.index-1 }}"
+#  loop: "{{ ceph_osd_layout }}"
+#  loop_control:
+#    extended: yes
 
 ## Output flash settings
 - debug:
@@ -133,9 +133,17 @@
       {%        set deploy_cmd = deploy_cmd + ' --wal-device ' + prefix+osd.wal + ' --wal-size ' + ceph_osd_wal_size %}
       {%      endif %}
       {%    endif %}
-      echo "Deploy command: {{ deploy_cmd }}"
-      {{ deploy_cmd }}
+      ret=0
+      if [[ ! `ceph osd find {{ osd_id }}` ]] && [[ ! `cat /var/lib/ceph/osd/ceph-{{ osd_id }}/whoami` ]] 
+      then
+        echo "Deploy command: {{ deploy_cmd }}"
+        {{ deploy_cmd }}
+        ret=1
+      else
+        echo "OSD {{ osd_id }} (drive {{ prefix+osd.drive }}) already deployed."
+      fi
       {%  endfor %}
+      exit $ret
   when: not ceph_opencas|bool
 
 - block: 

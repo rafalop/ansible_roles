@@ -5,12 +5,11 @@ destroy_existing: false
 destroy_remove_packages: false
 ceph_custom: "echo 'No custom config is defined.'"
 ceph_bcache: false
-ceph_bcache_shared: true
-ceph_bcache_cache_size: '0'
-ceph_bcache_db_size: '0'
-ceph_bcache_wal_size: '0'
-ceph_bcache_cache_mode: writethrough
-ceph_bcache_seq_cutoff: 8k
+ceph_osd_cache_size: '0'
+ceph_osd_db_size: '0'
+ceph_osd_wal_size: '0'
+ceph_osd_bcache_cache_mode: writeback
+ceph_osd_bcache_seq_cutoff: 8k
 ceph_opencas: false
 ceph_waitclean_retries: 30
 ceph_waitclean_delay: 60
