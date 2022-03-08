@@ -99,7 +99,12 @@
         script: |
           tracker=$(mktemp)
           {%  for osd in ceph_osd_layout %}
-          {%    for key, dev in osd.items() %}
+          {%    for key, val in osd.items() %}
+          {%      if '/dev' not in val %}
+          {%        set dev = '/dev/' + val %}
+          {%      else %}
+          {%        set dev = val %}
+          {%      endif %}
           if ! grep -q {{ dev }} $tracker
           then
             echo "Wiping {{ dev }}"
