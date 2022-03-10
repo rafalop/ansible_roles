@@ -61,6 +61,15 @@
         name: bcache
   when: ceph_bcache|bool
 
+- block:
+    - name: install ceph-lvmcache.sh
+      copy:
+        src: ceph-lvmcache.sh
+        dest: /usr/local/bin/
+        mode: 0744
+        owner: root
+        group: root
+
 ## This stuff works out the OSD ids
 - set_fact:
     groups_pos: "{{ lookup('ansible.utils.index_of', groups.osd, 'eq', inventory_hostname) }}"
@@ -110,7 +119,7 @@
       {%      set prefix = '' %}
       {%    endif %}
       # Cases without cache (use ceph-volume directly)
-      {%    if ceph_osd_cache_size == 0 or ceph_osd_cache_size == 'none' or not ceph_bcache|bool %}
+      {%    if ceph_osd_cache_size == 0 or ceph_osd_cache_size == 'none' or (not ceph_bcache|bool and not ceph_lvmcache|bool) %}
       {%      set deploy_cmd = 'ceph-volume lvm create --data ' + prefix+osd.drive  + ' --osd-id=' + osd_id|string %}
       # wal == 0 && db == 0 && cache == 0 (all not set, plain hdd OSD) do nothing else
       # db != 0 (db specified)
@@ -121,9 +130,9 @@
       {%      if ceph_osd_wal_size != 0 and ceph_osd_wal_size != 'none' %}
       {%        set deploy_cmd = deploy_cmd + ' --block.wal ' + prefix+osd.wal + ' --block.wal-size ' + ceph_osd_wal_size %}
       {%      endif %}
-      # Cases with cache (use ceph-bcache.sh)
+      # Cases with cache (use ceph-bcache.sh or ceph-lvmcache.sh)
       {%    else %}
-      {%      set deploy_cmd = 'ceph-bcache.sh --doit --cache-mode ' + ceph_osd_bcache_cache_mode + ' --seq-cutoff ' + ceph_osd_bcache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size + ' --cv-args --osd-id=' + osd_id|string %}
+      {%      set deploy_cmd = ' --doit --cache-mode ' + ceph_osd_cache_mode + ' --seq-cutoff ' + ceph_osd_cache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size + ' --cv-args --osd-id=' + osd_id|string %}
       # db != 0 (db specified)
       {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
       {%        set deploy_cmd = deploy_cmd + ' --db-device ' + prefix+osd.db + ' --db-size ' + ceph_osd_db_size %} 
@@ -131,6 +140,11 @@
       # wal != 0 (wal specified)
       {%      if ceph_osd_wal_size != 0 and ceph_osd_wal_size != 'none' %}
       {%        set deploy_cmd = deploy_cmd + ' --wal-device ' + prefix+osd.wal + ' --wal-size ' + ceph_osd_wal_size %}
+      {%      endif %}
+      {%      if ceph_lvmcache|bool %}
+      {%        set deploy_cmd = 'ceph-lvmcache.sh' + deploy_cmd %}
+      {%      else %}
+      {%        set deploy_cmd = 'ceph-bcache.sh' + deploy_cmd %}
       {%      endif %}
       {%    endif %}
       ret=0
