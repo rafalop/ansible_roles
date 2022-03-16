@@ -97,7 +97,7 @@
       {% endif %}
   when:
     - destroy_existing|bool
-    - "'mgr' in group_names"
+    - "'mon' in group_names"
 
 ## Destroy osd configuration
 - block:
