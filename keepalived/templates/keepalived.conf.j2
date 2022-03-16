@@ -1,0 +1,59 @@
+! Configuration File for keepalived
+
+global_defs {
+#    notification_email {
+#        {{ keepalived_support_email }}
+#    }
+
+#    notification_email_from {{ keepalived_support_email }}
+    smtp_server "{{ keepalived_smtp_server }}"
+    smtp_connect_timeout 30
+    router_id {{ keepalived_router_id }}
+    script_user root
+    enable_script_security
+}
+
+{% for instance in keepalived_instances %}
+vrrp_script chk_{{ instance.name }} {
+  script "{{ instance.check_script }}"
+  interval 2
+  weight 2
+}
+{% endfor %}
+
+{% for instance in keepalived_instances %}
+vrrp_instance {{ instance.name }} {
+    state {{ instance.state }}
+    interface {{ instance.interface }}
+    virtual_router_id {{ instance.virtual_router_id }}
+    priority {{ instance.priority }}
+    advert_int 1
+
+    unicast_src_ip {{ instance.unicast_src_ip }}
+    unicast_peer {
+        {{ instance.unicast_peer|join('\n') }}
+    }
+
+    authentication {
+        auth_type PASS
+        auth_pass IWbd3nZ
+    }
+
+    track_script {
+        chk_{{ instance.name }}
+    }
+
+    virtual_ipaddress {
+        {{ instance.virtual_ipaddress }}
+    }
+    {%  if instance.notify_master is defined %}
+    notify_master "{{ instance.notify_master }}"
+    {%  endif %}
+    {%  if instance.notify_backup is defined %}
+    notify_backup "{{ instance.notify_backup }}"
+    {%  endif %}
+    {%  if instance.notify_fault is defined %}
+    notify_fault "{{ instance.notify_fault }}"
+    {%  endif %}
+}
+{% endfor %}

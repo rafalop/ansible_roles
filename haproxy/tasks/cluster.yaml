@@ -1,0 +1,93 @@
+---
+# Keepalived config
+- name: setup keepalived
+  include_role:
+    name: keepalived
+  vars:
+    keepalived_config_freeform: true
+    keepalived_config: |
+      global_defs {
+          smtp_server "{{ keepalived_smtp_server }}"
+          smtp_connect_timeout 30
+          router_id {{ keepalived_router_id }}
+          script_user root
+          enable_script_security
+      }
+      
+      {%  for ipaddr in haproxy_cluster_frontend_ips %}
+      {%    set instance_name = 'ha'+loop.index|string %} 
+      vrrp_script chk_{{ instance_name }} {
+        script "/usr/bin/kill -0 $(cat /var/run/haproxy-{{ instance_name }})"
+        interval 2
+        weight 2
+      }
+      vrrp_instance {{ instance_name }} {
+          state BACKUP
+          interface {{ haproxy_cluster_keepalived_interface }}
+          virtual_router_id {{ 50+loop.index }}
+      {%    set myindex = lookup('ansible.utils.index_of', groups.haproxy_cluster, 'eq', inventory_hostname) %}
+      {%    if myindex == loop.index0 %} 
+          priority 255 
+      {%    elif myindex > haproxy_cluster_frontend_ips|length %} 
+      {%      set rolling_prio = (myindex % haproxy_cluster_frontend_ips|length) + loop.index0 %}
+          priority {{ 150 + rolling_prio }}
+      {%    elif haproxy_cluster_frontend_ips|length > groups.haproxy_cluster|length %} 
+      {%      set rolling_prio = groups.haproxy_cluster|length % loop.index %}
+          priority {{ 100 + rolling_prio  }}
+      {%    else %}
+          priority {{ 100 }}
+      {%    endif %}
+          advert_int 1
+          unicast_src_ip {{ haproxy_cluster_unicast_src_ip|default(ansible_default_ipv4.address) }}
+          unicast_peer {
+      {%    set my_ip = hostvars[inventory_hostname].ansible_default_ipv4.address  %}
+      {%    if haproxy_cluster_unicast_src_ip is defined %}
+            {{ haproxy_cluster_keepalived_unicast_peer | difference(my_ip) | join('\n') }}
+      {%-    else -%}
+      {%-      for host in groups.haproxy_cluster -%}
+      {%        set nextip = hostvars[host].ansible_default_ipv4.address %}
+      {%-        if nextip != my_ip %} 
+            {{ nextip }}
+      {%-        endif %}
+      {%-     endfor -%}
+      {%    endif %}
+
+          }
+          authentication {
+              auth_type PASS
+              auth_pass IWbd3nZ
+          }
+      
+          track_script {
+              chk_{{ instance_name }}
+          }
+      
+          virtual_ipaddress {
+              {{ ipaddr }}
+          }
+          notify_master "/usr/bin/systemctl start haproxy@{{ instance_name }}"
+          notify_backup "/usr/bin/systemctl stop haproxy@{{ instance_name }}"
+          notify_fault "/usr/bin/systemctl stop haproxy@{{ instance_name }}"
+      }
+      {%  endfor %}
+
+
+# HAproxy config (1 instance per defined frontend/virtual ip)
+- name: set up haproxy instance
+  include_tasks: haproxy.yaml
+  vars:
+    haproxy_cluster: false
+    haproxy_instance_name: "ha{{ ansible_loop.index }}"
+    haproxy_frontend_config: |
+      {{ haproxy_cluster_frontend_common_config }}
+        bind {{ instance_ip }}:80
+    haproxy_backend_config: |
+      {{ haproxy_cluster_backend_common_config }}
+      {%  for backend_srv in haproxy_cluster_backend_servers %}
+        server backend-{{ loop.index }} {{ backend_srv }} check inter 1s
+      {%  endfor %}
+  loop: "{{ haproxy_cluster_frontend_ips }}"
+  loop_control: 
+    extended: yes
+    loop_var: instance_ip
+

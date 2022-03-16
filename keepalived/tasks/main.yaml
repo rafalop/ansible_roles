@@ -1,0 +1,29 @@
+---
+- name: install keepalived
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - keepalived
+
+- name: configure keepalived (templated)
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    backup: yes
+  notify: restart keepalived
+  when: keepalived_config_templated|bool
+
+- name: configure keepalived (freeform)
+  copy:
+    content: "{{ keepalived_config }}"
+    dest: /etc/keepalived/keepalived.conf
+    backup: yes
+  notify: restart keepalived
+  when: keepalived_config_freeform|bool
+
+- name: start keepalived
+  systemd:
+    name: keepalived
+    state: started
+    enabled: yes

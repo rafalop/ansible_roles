@@ -1,0 +1,91 @@
+---
+- include_role:
+    name: packages
+
+- name: stop and disable base haproxy service
+  systemd:
+    name: haproxy
+    state: stopped
+    enabled: no
+
+- name: systemd multi instance service
+  copy:
+    src: haproxy@.service
+    dest: /etc/systemd/system
+  register: haproxy_systemd_multi
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  when: haproxy_systemd_multi.changed
+
+- name: certs dir
+  file:
+    path: /etc/ssl/private
+    state: directory
+    owner: root
+    group: root 
+
+## Define any certs in haproxy_certs var (hopefully encrypted) 
+## eg. This will create /etc/ssl/private/my_cert.pem
+## and /etc/ssl/private/my_cert.key (optional)
+##  haproxy_certs:
+##    - name: my_cert
+##      pem: |
+##        ---begin certificate---
+##        blahblahblahblahblahblahblah 
+##        ---end certificate---
+##      key: |
+##        ---begin private key---
+- include_role:
+    name: ssl
+  vars:
+    ssl_certs: "{{ haproxy_certs }}"
+    ssl_webservers: ['haproxy']
+
+- template:
+    src: haproxy.cfg.j2
+    dest: "/etc/haproxy/haproxy-{{ haproxy_instance_name }}.cfg"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+  notify: restart haproxy
+  tags: cfg
+
+- name: ensure dir
+  file:
+    path: /var/log/haproxy
+    state: directory
+    follow: yes 
+
+- name: configure rsyslog specials
+  copy:
+    content: |
+      $AddUnixListenSocket /var/lib/haproxy/log
+      local2.*  -/var/log/haproxy/haproxy.log
+      & stop
+    dest: /etc/rsyslog.d/a_haproxy.conf
+    mode: 0644
+    owner: root
+    group: root
+  notify: restart rsyslog
+
+- name: logrotate conf
+  copy:
+    src: haproxy_logrotate
+    dest: /etc/logrotate.d/haproxy_logr
+
+- name: ensure service started
+  systemd:
+    name: "haproxy@{{ haproxy_instance_name }}"
+    state: started
+    enabled: yes
+  failed_when: false
+
+#- name: keep logs 90 days
+#  lineinfile:
+#    path: /etc/logrotate.d/haproxy
+#    regexp: '^(.*) rotate'
+#    line: '\1 rotate 180'
+#    backrefs: yes
