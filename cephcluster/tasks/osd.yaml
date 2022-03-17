@@ -69,6 +69,7 @@
         mode: 0744
         owner: root
         group: root
+  when: ceph_lvmcache|bool
 
 ## This stuff works out the OSD ids
 - set_fact:

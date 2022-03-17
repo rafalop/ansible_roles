@@ -20,6 +20,10 @@
       elif [[ -f /etc/ceph/ceph.client.admin.keyring && -d /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`/store.db ]]
       then
         echo "There is an existing MON on this host, skipping deploy."
+      elif ! timeout 30 ceph -s
+      then
+        echo "Unable to connect to ceph cluster to get keys."
+        exit 100
       else
         ceph auth get mon. -o /tmp/ceph.mon.keyring
         ceph mon getmap -o /tmp/monmap

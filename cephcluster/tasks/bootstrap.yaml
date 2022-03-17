@@ -19,7 +19,7 @@
       elif [[ -f /etc/ceph/ceph.client.admin.keyring && -d /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`/store.db ]]
       then
         echo "There is an existing cluster defined, skipping bootstrap."
-        ceph -s
+        timeout 5 ceph -s
       else
         ceph-authtool --create-keyring /tmp/ceph.mon.keyring --gen-key -n mon. --cap mon 'allow *'
         ceph-authtool --create-keyring /etc/ceph/ceph.client.admin.keyring --gen-key -n client.admin --cap mon 'allow *' --cap osd 'allow *' --cap mds 'allow *' --cap mgr 'allow *'
@@ -32,6 +32,7 @@
         chown ceph:ceph -R /var/lib/ceph
         sudo -u ceph mkdir /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`
         sudo -u ceph ceph-mon --mkfs -i `hostname` --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
+        ln -s /lib/systemd/system/ceph-mon@.service /etc/systemd/system/multi-user.target.wants/ceph-mon@`hostname`.service
         systemctl enable ceph-mon@`hostname`
         systemctl start ceph-mon@`hostname`
         systemctl status ceph-mon@`hostname`
@@ -39,7 +40,7 @@
         then
           exit 100
         fi
-        if ! timeout 5 ceph -s
+        if ! timeout 30 ceph -s
         then
           echo "Issue connecting to created cluster."
           exit 100
