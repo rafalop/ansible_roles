@@ -66,8 +66,8 @@ ceph_osd_db_size: 5G
 ceph_osd_wal_size: 1G
 # Set to string (same as db and wal) if you want to use bcache
 ceph_osd_cache_size: 0
-ceph_osd_bcache_cache_mode: writeback
-ceph_osd_bcache_seq_cutoff: 8k
+ceph_osd_cache_mode: writeback
+ceph_osd_cache_seq_cutoff: 8k
 # db, wal and cache specify which drive to create partitions for the osd
 ceph_osd_layout: [
   { drive: /dev/vdc, db: /dev/vdb, wal: /dev/vdb, cache: /dev/vdb },
