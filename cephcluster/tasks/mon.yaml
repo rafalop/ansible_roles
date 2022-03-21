@@ -7,6 +7,18 @@
       - jq
       - "{{ 'ceph-mon'+ceph_package_version }}"
 
+- block:
+  - file:
+      state: directory
+      path: "/etc/systemd/system/ceph-mon@{{ inventory_hostname }}.service.d"
+  - name: override systemd for pacific
+    copy:
+      content: |
+        [Service]
+        MemoryDenyWriteExecute=false
+      dest: "/etc/systemd/system/ceph-mon@{{ inventory_hostname }}.service.d/override.conf"
+  when: "'pacific' in ceph_repo"
+
 - include_role:
     name: shellscript
   vars:
@@ -30,6 +42,7 @@
         chown ceph:ceph -R /var/lib/ceph
         sudo -u ceph mkdir /var/lib/ceph/mon/{{ ceph_cluster_name }}-`hostname`
         sudo -u ceph ceph-mon --mkfs -i `hostname` --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
+        systemctl daemon-reload
         systemctl start ceph-mon@`hostname`
         systemctl status ceph-mon@`hostname`
         if [[ $? -ne 0 ]]

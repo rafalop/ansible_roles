@@ -11,16 +11,23 @@
     name: shellscript
   vars:
     script: | 
-      INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
-      if [[ -d $INSTANCE_DIR ]]
-      then
-        echo "Instance dir exists, looks like MDS was already deployed here."
-        exit 1
-      else
-        mkdir /var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
-        ceph auth get-or-create mds.`hostname` mon 'profile mds' mgr 'profile mds' mds 'allow *' osd 'allow *' > /var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`/keyring
-        systemctl start ceph-mds@`hostname`
-        systemctl enable ceph-mds@`hostname`
-        systemctl status ceph-mds@`hostname`
-        exit $?
-      fi
+      echo "Deploying {{ ceph_mds_instances_per_host }} MDS instances on this host on this host."
+      ret=0
+      for i in `seq 1 {{ ceph_mds_instances_per_host }}`
+      do
+        INSTANCE_NAME=`hostname`-$i
+        INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-${INSTANCE_NAME}
+        if [[ -d $INSTANCE_DIR ]]
+        then
+          echo "${INSTANCE_DIR} exists, not doing anything."
+        else
+          mkdir $INSTANCE_DIR
+          ceph auth get-or-create mds.${INSTANCE_NAME} mon 'profile mds' mgr 'profile mds' mds 'allow *' osd 'allow *' > ${INSTANCE_DIR}/keyring
+          systemctl start ceph-mds@${INSTANCE_NAME}
+          systemctl enable ceph-mds@${INSTANCE_NAME}
+          systemctl status ceph-mds@${INSTANCE_NAME}
+          ln -s /lib/systemd/system/ceph-mds@.service /etc/systemd/system/multi-user.target.wants/ceph-mds@${INSTANCE_NAME}.service
+          ret=1
+        fi
+      done
+      exit $ret

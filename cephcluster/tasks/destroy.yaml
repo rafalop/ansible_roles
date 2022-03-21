@@ -19,12 +19,29 @@
     name: shellscript
   vars:
     script: | 
-      INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
-      systemctl stop ceph-mds.target
+      for i in `seq 1 {{ ceph_mds_instances_per_host }}`
+      do
+        INSTANCE_NAME=`hostname`-$i
+        INSTANCE_DIR=/var/lib/ceph/mds/{{ ceph_cluster_name }}-${INSTANCE_NAME}
+        echo "Removing instance $INSTANCE_NAME"
+        systemctl stop ceph-mds.target
+        systemctl stop ceph-mds@${INSTANCE_NAME}
+        systemctl disable ceph-mds@${INSTANCE_NAME}
+        pkill ceph-mds
+        rm -rf $INSTANCE_DIR
+        timeout 5 ceph auth del mds.${INSTANCE_NAME}
+      done
       systemctl stop ceph-mds@`hostname`
       systemctl disable ceph-mds@`hostname`
-      rm -rf $INSTANCE_DIR
+      rm -f /var/lib/ceph/mds/{{ ceph_cluster_name }}-`hostname`
+      timeout 5 ceph auth del mds.`hostname`
       rm -f /var/log/ceph/ceph-mds*
+      {% if destroy_remove_packages %}
+      apt -y remove ceph*
+      apt -y remove librados*
+      apt -y remove librbd*
+      apt -y autoremove
+      {% endif %}
   when: 
     - destroy_existing|bool
     - "'mds' in group_names"
@@ -39,9 +56,16 @@
       systemctl stop ceph-radosgw@${CEPHX_USER}
       pkill radosgw
       rm -rf /var/lib/ceph/radosgw/ceph-${CEPHX_USER}
-      timeout 3 ceph auth rm client.${CEPHX_USER}
+      timeout 5 ceph auth rm client.${CEPHX_USER}
+      timeout 5 ceph auth del client.$CEPHX_USER
       rm -f /var/log/ceph/ceph-client.rgw*
     done
+    {% if destroy_remove_packages %}
+    apt -y remove ceph*
+    apt -y remove librados*
+    apt -y remove librbd*
+    apt -y autoremove
+    {% endif %}
   failed_when: false
   when: 
     - destroy_existing|bool
@@ -56,6 +80,7 @@
       echo "Removing existing mons."
       systemctl stop ceph-mon.target
       systemctl stop ceph-mon@`hostname`
+      systemctl disable ceph-mon@`hostname`
       systemctl daemon-reload
       rm -rf /var/lib/ceph/mon/*
       rm -rf /var/lib/ceph/{{ ceph_cluster_fsid }}
@@ -66,10 +91,11 @@
       rm -f /etc/systemd/system/multi-user.target.wants/ceph-mon*
       rm -f /etc/systemd/system/multi-user.target.wants/ceph-mgr*
       rm -f /var/log/ceph/ceph-mon*
-      rm -f /var/log/ceph/ceph-mgr*
       rm -f /var/log/ceph/ceph.log*
       {% if destroy_remove_packages %}
       apt -y remove ceph*
+      apt -y remove librados*
+      apt -y remove librbd*
       apt -y autoremove
       {% endif %}
   when:
@@ -93,6 +119,8 @@
       rm -f /var/log/ceph/ceph-mgr*
       {% if destroy_remove_packages %}
       apt -y remove ceph*
+      apt -y remove librados*
+      apt -y remove librbd*
       apt -y autoremove
       {% endif %}
   when:
@@ -156,6 +184,12 @@
         rm -f /var/log/ceph/ceph-osd*
         rm -f /var/log/ceph/ceph-volume*
         rm -f /etc/systemd/system/multi-user.target.wants/ceph-volume*
+        {% if destroy_remove_packages %}
+        apt -y remove ceph*
+        apt -y remove librados*
+        apt -y remove librbd*
+        apt -y autoremove
+        {% endif %}
   when: 
     - "'osd' in group_names"
     - destroy_existing|bool

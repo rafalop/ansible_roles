@@ -1,14 +1,15 @@
 # Specify this var in groupvars/hostvars as '=<version>' for debian, or '-<version>' for RH
 # if you want a particular ceph version. eg. ceph_pacakge_version: '=14.2.22-blah'
 ceph_package_version: ""
+
 destroy_existing: false
 destroy_remove_packages: false
 ceph_custom: "echo 'No custom config is defined.'"
 ceph_bcache: false
 ceph_lvmcache: false
-ceph_osd_cache_size: '0'
-ceph_osd_db_size: '0'
-ceph_osd_wal_size: '0'
+ceph_osd_cache_size: 0
+ceph_osd_db_size: 0
+ceph_osd_wal_size: 0
 ceph_osd_cache_mode: writeback
 ceph_osd_cache_seq_cutoff: 8k
 ceph_opencas: false
@@ -18,3 +19,4 @@ ceph_waitclean: false
 ceph_bcache_tuning: ''
 ceph_rgw_instances_per_host: 1
 ceph_rgw_instance_prefix: 'rgw.'
+ceph_mds_instances_per_host: 1
