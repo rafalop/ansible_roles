@@ -22,9 +22,12 @@
         url: "{{ ceph_repo_key }}"
         state: present
       when: ceph_repo_key is defined
-    - apt_repository:
-        repo: "{{ ceph_repo }}"
-        filename: ceph
+    - copy:
+        dest: /etc/apt/sources.list.d/ceph.list
+        content: |
+          {{ ceph_repo }}
+        backup: true
+    - apt:
         update_cache: true
   tags: prep
 
@@ -54,13 +57,6 @@
   vars: 
     role_function: bootstrap
 
-- name: deploy mons and mgrs
-  hosts: mon
-  become: true
-  roles:
-    - {role: cephcluster, role_function: mon}
-    - {role: cephcluster, role_function: mgr}
-
 - name: push admin key to cluster nodes
   hosts: ceph_cluster:rgw
   become: true
@@ -81,35 +77,23 @@
         owner: root
         group: root
 
+- name: deploy mons and mgrs
+  hosts: mon
+  become: true
+  roles:
+    - {role: cephcluster, role_function: mon}
+    - {role: cephcluster, role_function: mgr}
+
 - name: deploy osds
   hosts: osd
   become: true
-  serial: 1 # ensures osd numbers are not all over the place
+  order: sorted
   tasks:
-    - name: get osd bootstrap key
-      shell: |
-        ceph auth get client.bootstrap-osd | head -2
-      register: client_bootstrap_osd
-      delegate_to: "{{ groups.mon[0] }}"
-      run_once: true
-
-    - name: push osd bootstrap key
-      copy:
-        dest: "{{ item }}"
-        content: |
-          {{ client_bootstrap_osd.stdout }}
-        mode: 0600
-        owner: root
-        group: root
-      with_items:
-        - /var/lib/ceph/bootstrap-osd/{{ ceph_cluster_name }}.keyring
-        - /etc/ceph/{{ ceph_cluster_name }}.client.bootstrap-osd.keyring
     - include_role:
         name: cephcluster
       vars:
         role_function: "{{ item }}"
       with_items:
-        - wait_clean
         - osd
 
 - name: deploy MDSs
@@ -138,10 +122,3 @@
   vars:
     role_function: custom
   tags: custom
-
-- name: configure haproxy
-  hosts: haproxy
-  become: true
-  roles:
-    - haproxy
-  tags: haproxy
