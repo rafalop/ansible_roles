@@ -22,3 +22,30 @@
 
       {% endfor %}
   tags: configure
+  when:
+    - "'rgw' not in group_names"
+
+- name: configure ceph.conf (rgw)
+  copy:
+    dest: /etc/ceph/ceph.conf
+    content: |
+      {% for heading,values in ceph_config.items() %}
+      [{{ heading }}]
+      {% for key, val in values.items() %}
+      {% if key == 'mon_host' %}
+      mon_host = {% for ipaddr in val %}{{ ipaddr }}{% if not loop.last %},{% endif %}{% endfor %}
+
+      {% else %}
+      {{ key }} = {{ val }}
+      {% endif %}
+      {% endfor %}
+
+      {% endfor %}
+      {%  for count in range(1, ceph_rgw_instances_per_host+1) %}
+      [client.{{ ceph_rgw_instance_prefix }}{{ inventory_hostname }}-{{ count }}]
+      rgw_frontends = "beast port={{ 7480+count }}" 
+      {{ ceph_rgw_config }}
+      {%  endfor %} 
+  tags: configure
+  when:
+    - "'rgw' in group_names"
