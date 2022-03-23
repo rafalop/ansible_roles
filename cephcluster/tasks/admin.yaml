@@ -1,0 +1,8 @@
+---
+- name: install ceph-common
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - jq
+      - "{{ 'ceph-common'+ceph_package_version }}"
