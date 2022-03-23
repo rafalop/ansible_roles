@@ -63,7 +63,7 @@
       shell: 
         cmd: |
           curl https://raw.githubusercontent.com/rafalop/bcachectl/main/scripts/install_bcachectl.sh | bash -s -- reinstall
-          cp /tmp/.bcachectl_install/bcachectl/scripts/ceph-bcache.sh /usr/local/bin/
+          cp /var/tmp/.bcachectl_install/bcachectl/scripts/ceph-bcache.sh /usr/local/bin/
           chmod u+x /usr/local/bin/ceph-bcache.sh
         executable: /bin/bash
     - include_role:
