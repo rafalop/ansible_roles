@@ -7,5 +7,4 @@
   delegate_to: "{{ groups.mon[0] }}"
   retries: "{{ ceph_waitclean_retries }}"
   delay: "{{ ceph_waitclean_delay }}"
-  when: ceph_waitclean | bool
 
