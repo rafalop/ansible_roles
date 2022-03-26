@@ -38,10 +38,10 @@
           priority {{ 100 }}
       {%    endif %}
           advert_int 1
-          unicast_src_ip {{ haproxy_cluster_unicast_src_ip|default(ansible_default_ipv4.address) }}
+          unicast_src_ip {{ haproxy_cluster_keepalived_unicast_src_ip|default(ansible_default_ipv4.address) }}
           unicast_peer {
-      {%    set my_ip = hostvars[inventory_hostname].ansible_default_ipv4.address  %}
-      {%    if haproxy_cluster_unicast_src_ip is defined %}
+      {%    set my_ip = haproxy_cluster_keepalived_unicast_src_ip|default(hostvars[inventory_hostname].ansible_default_ipv4.address) %}
+      {%    if haproxy_cluster_keepalived_unicast_peer is defined %}
             {{ haproxy_cluster_keepalived_unicast_peer | difference(my_ip) | join('\n') }}
       {%-    else -%}
       {%-      for host in groups.haproxy_cluster -%}
