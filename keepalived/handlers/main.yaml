@@ -3,3 +3,7 @@
   systemd:
     name: keepalived
     state: restarted
+
+- name: reload systemd config
+  systemd:
+    daemon_reload: true
