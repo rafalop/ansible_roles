@@ -7,3 +7,4 @@ keepalived_config_templated: true
 keepalived_config_freeform: false
 keepalived_config: ''
 keepalived_instances: []
+keepalived_systemd_overrides: ''

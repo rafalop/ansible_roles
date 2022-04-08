@@ -22,8 +22,27 @@
   notify: restart keepalived
   when: keepalived_config_freeform|bool
 
+- name: apply overrides
+  block:
+    - name: create keepalived override dir
+      file:
+        path: /etc/systemd/system/keepalived.service.d
+        state: directory
+    - copy:
+        dest: /etc/systemd/system/keepalived.service.d/override.conf
+        content: "{{ keepalived_systemd_overrides }}"
+      notify:
+        - restart keepalived
+      register: keepalived_overrides
+    - systemd:
+        daemon_reload: true
+      when: keepalived_overrides.changed
+  when: keepalived_systemd_overrides != ''
+
 - name: start keepalived
   systemd:
     name: keepalived
     state: started
     enabled: yes
+
+
