@@ -1,0 +1,183 @@
+---
+- include_role:
+    name: packages 
+  vars: 
+    packages_list:
+      - nfs-ganesha-rados-grace
+
+- name: push keepalived management script
+  copy:
+    src: ganesha-keepalived.sh
+    dest: /usr/local/bin/
+    mode: 0700
+    owner: root
+    group: root
+
+- name: setup keepalived 
+  include_role:
+    name: keepalived
+  vars:
+    keepalived_config_freeform: true
+    keepalived_systemd_overrides: |
+      [Service]
+      ExecStartPre=/bin/bash -c 'for instance in `cat /etc/ganesha/instance_list`;do /usr/local/bin/ganesha-keepalived.sh reset --instance $instance;done'
+      ExecStopPost=/bin/bash -c 'for instance in `cat /etc/ganesha/instance_list`;do /usr/local/bin/ganesha-keepalived.sh stop --instance $instance;done'
+      ExecStopPost=/bin/bash -c "ps ax | grep '/usr/local/bin/ganesha-keepalived.sh' |  grep -v grep | awk '{print $1}'| xargs -I {} kill {}"
+    keepalived_config: |
+      global_defs {
+          script_user root
+          enable_script_security
+          {{ ganesha_cluster_keepalived_global_defs }}
+      }
+      
+      {%  for ipaddr in ganesha_cluster_frontend_ips %}
+      {%    set instance_name = 'ga'+loop.index|string %} 
+      vrrp_script chk_{{ instance_name }} {
+        script "/usr/local/bin/ganesha-keepalived.sh check --instance {{ instance_name }}"
+        interval 5
+        #weight 1
+        #weight -151
+        #weight -200
+        fall 2
+        rise 2
+        init_fail
+      }
+      vrrp_instance {{ instance_name }} {
+          state MASTER
+          interface {{ ganesha_cluster_keepalived_interface }}
+          virtual_router_id {{ 50+loop.index }}
+      {%    set myindex = lookup('ansible.utils.index_of', groups.nfs_cluster, 'eq', inventory_hostname) %}
+      {%    if myindex == loop.index0 %} 
+          priority 250
+      {%    elif myindex > ganesha_cluster_frontend_ips|length %} 
+      {%      set rolling_prio = (myindex % ganesha_cluster_frontend_ips|length) + loop.index0 %}
+          priority {{ 150 + rolling_prio }}
+      {%    elif ganesha_cluster_frontend_ips|length > groups.nfs_cluster|length %} 
+      {%      set rolling_prio = groups.nfs_cluster|length % loop.index %}
+          priority {{ 100 + rolling_prio  }}
+      {%    else %}
+          priority {{ 100 }}
+      {%    endif %}
+          advert_int 1
+          unicast_src_ip {{ ganesha_cluster_keepalived_unicast_src_ip|default(ansible_default_ipv4.address) }}
+          unicast_peer {
+      {%    set my_ip = ganesha_cluster_keepalived_unicast_src_ip|default(hostvars[inventory_hostname].ansible_default_ipv4.address) %}
+      {%    if ganesha_cluster_keepalived_unicast_peer is defined %}
+            {{ ganesha_cluster_keepalived_unicast_peer | difference(my_ip) | join('\n') }}
+      {%-    else -%}
+      {%-      for host in groups.nfs_cluster -%}
+      {%        set nextip = hostvars[host].ansible_default_ipv4.address %}
+      {%-        if nextip != my_ip %} 
+            {{ nextip }}
+      {%-        endif %}
+      {%-     endfor -%}
+      {%    endif %}
+
+          }
+          authentication {
+              auth_type PASS
+              auth_pass IWbd3nZ
+          }
+      
+          track_script {
+              chk_{{ instance_name }}
+          }
+      
+          virtual_ipaddress_excluded {
+              {{ ipaddr }}
+          }
+          notify_master "/usr/local/bin/ganesha-keepalived.sh master --instance {{ instance_name }}"
+          notify_backup "/usr/local/bin/ganesha-keepalived.sh backup --instance {{ instance_name }}"
+          notify_fault "/usr/local/bin/ganesha-keepalived.sh fault --instance {{ instance_name }}"
+          notify_stop "/usr/local/bin/ganesha-keepalived.sh stop --instance {{ instance_name }}"
+      }
+      {%  endfor %}
+
+- name: configure rados kv backend
+  shell: 
+    executable: /bin/bash
+    cmd: |
+      {%  for ipaddr in ganesha_cluster_frontend_ips %}
+      {%    set instance_name = 'ga'+loop.index|string %} 
+      if ganesha-rados-grace --userid {{ ganesha_cluster_userid }} --cephconf {{ ganesha_cluster_cephconf }} -n {{ ganesha_cluster_namespace }} --pool {{ ganesha_cluster_pool }} dump | grep {{ instance_name }}
+      then
+        ret=0
+      else
+        ganesha-rados-grace --userid {{ ganesha_cluster_userid }} --cephconf {{ ganesha_cluster_cephconf }} -n {{ ganesha_cluster_namespace }} --pool {{ ganesha_cluster_pool }} add {{ instance_name }}
+        if [[ $? == 0 ]]; then ret=1; else ret=100;fi
+      fi
+      {%  endfor %}
+      exit $ret
+  register: kv_backend
+  failed_when: 
+    - kv_backend.rc != 0
+    - kv_backend.rc != 1
+
+- name: fix ganesha dbus security for multiple instances
+  copy: 
+    dest: /etc/dbus-1/system.d/nfs-ganesha-dbus.conf
+    backup: true
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?> <!-- -*- XML -*- -->
+      <!DOCTYPE busconfig PUBLIC
+       "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+       "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+      <busconfig>
+        <!-- Only root can own the service -->
+        <policy user="root">
+        {%  for ip in ganesha_cluster_frontend_ips %}
+        {%    set instance_name = 'ga'+loop.index|string %}
+          <allow own="{{ instance_name }}.org.ganesha.nfsd"/>
+          <allow send_destination="{{ instance_name }}.org.ganesha.nfsd"/>
+      
+          <allow send_destination="{{ instance_name }}.org.ganesha.nfsd"
+                 send_interface="{{ instance_name }}.org.freedesktop.DBus.Introspectable"/>
+      
+          <allow send_destination="{{ instance_name }}.org.ganesha.nfsd"
+                 send_interface="{{ instance_name }}.org.ganesha.nfsd.CBSIM"/>
+      
+          <allow send_destination="{{ instance_name }}.org.ganesha.nfsd"
+                 send_interface="{{ instance_name }}.org.ganesha.nfsd.admin"/>
+        {% endfor %}
+        </policy>
+      </busconfig>
+  register: dbus_sec
+  notify: restart dbus
+
+- name: create instance list
+  copy:
+    dest: /etc/ganesha/instance_list
+    content: |
+      {% for ip in ganesha_cluster_frontend_ips %}
+      {{ 'ga'+loop.index|string }}
+      {% endfor %}
+
+# ganesha configs for each instance 
+- name: 'set up ganesha for {{ instance_ip }}'
+  include_tasks: ganesha.yaml
+  vars:
+    ganesha_instance_name: "ga{{ ansible_loop.index }}"
+    ganesha_cluster: false
+    ganesha_core_params:
+      Enable_NLM: 'false'
+      Protocols: '4'
+      Bind_addr: "{{ instance_ip }}"
+      Dbus_Name_Prefix: "{{ ganesha_instance_name }}"
+    ganesha_custom_configuration: |
+      NFSV4 {
+        RecoveryBackend = rados_cluster;
+        Grace_Period = {{ ganesha_cluster_grace_period }};
+        Minor_Versions = 1,2;
+        Lease_Lifetime = {{ ganesha_cluster_lease_lifetime }};
+      } 
+      RADOS_KV {
+      	userid = {{ ganesha_cluster_userid }};
+      	ceph_conf = {{ ganesha_cluster_cephconf }};
+      	nodeid = {{ ganesha_instance_name }};
+      	namespace = {{ ganesha_cluster_namespace }};
+        pool = {{ ganesha_cluster_pool }};
+      }
+  loop: "{{ ganesha_cluster_frontend_ips }}"
+  loop_control:
+    extended: true
+    loop_var: instance_ip

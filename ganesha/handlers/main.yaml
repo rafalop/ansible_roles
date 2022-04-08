@@ -1,0 +1,5 @@
+---
+- name: restart dbus
+  systemd:
+    name: dbus
+    state: restarted

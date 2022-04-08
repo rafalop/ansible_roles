@@ -1,0 +1,30 @@
+ganesha_cluster: false
+ganesha_cluster_userid: admin
+ganesha_cluster_cephconf: /etc/ceph/ceph.conf
+ganesha_cluster_nodeid: "{{ inventory_hostname }}"
+ganesha_cluster_namespace: ganesha
+ganesha_cluster_pool: nfs-ganesha
+ganesha_cluster_lease_lifetime: 30
+ganesha_cluster_grace_period: 60
+ganesha_clustername: ga-cluster
+ganesha_cluster_keepalived_global_defs: ''
+
+ganesha_core_params:
+  NSM_Use_Caller_Name: 'true'
+  Clustered: 'false'
+  MNT_Port: 20048
+  NLM_Port: 32803
+  Rquota_Port: 875
+
+ganesha_export_default_params:
+  Squash: 'No_Root_Squash'
+  SecType: 'sys'
+  Protocols: '4'
+
+ganesha_client_default_params:
+  Access_type: 'RW'
+
+ganesha_custom_configuration: ''
+ganesha_cephfs_backend: 'vfs'
+
+ganesha_instance_name: "ga1"

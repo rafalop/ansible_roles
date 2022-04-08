@@ -1,0 +1,6 @@
+---
+- include_tasks: cluster.yaml
+  when: ganesha_cluster|bool
+
+- include_tasks: ganesha.yaml
+  when: not ganesha_cluster|bool
