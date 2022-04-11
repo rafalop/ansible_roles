@@ -20,8 +20,8 @@
     keepalived_config_freeform: true
     keepalived_systemd_overrides: |
       [Service]
-      ExecStartPre=/bin/bash -c 'for instance in `cat /etc/ganesha/instance_list`;do /usr/local/bin/ganesha-keepalived.sh reset --instance $instance;done'
-      ExecStopPost=/bin/bash -c 'for instance in `cat /etc/ganesha/instance_list`;do /usr/local/bin/ganesha-keepalived.sh stop --instance $instance;done'
+      ExecStartPre=/bin/bash -c "for instance in `cat /etc/ganesha/instance_list | awk '{print $1}'`;do /usr/local/bin/ganesha-keepalived.sh reset --instance $instance;done"
+      ExecStopPost=/bin/bash -c "for instance in `cat /etc/ganesha/instance_list | awk '{print $1}'`;do /usr/local/bin/ganesha-keepalived.sh stop --instance $instance;done"
       ExecStopPost=/bin/bash -c "ps ax | grep '/usr/local/bin/ganesha-keepalived.sh' |  grep -v grep | awk '{print $1}'| xargs -I {} kill {}"
     keepalived_config: |
       global_defs {
@@ -35,19 +35,17 @@
       vrrp_script chk_{{ instance_name }} {
         script "/usr/local/bin/ganesha-keepalived.sh check --instance {{ instance_name }}"
         interval 5
-        #weight 1
-        #weight -151
-        #weight -200
         fall 2
         rise 2
         init_fail
       }
       vrrp_instance {{ instance_name }} {
-          state MASTER
           interface {{ ganesha_cluster_keepalived_interface }}
           virtual_router_id {{ 50+loop.index }}
       {%    set myindex = lookup('ansible.utils.index_of', groups.nfs_cluster, 'eq', inventory_hostname) %}
+      {%      set state = 'BACKUP' %}
       {%    if myindex == loop.index0 %} 
+      {%      set state = 'MASTER' %}
           priority 250
       {%    elif myindex > ganesha_cluster_frontend_ips|length %} 
       {%      set rolling_prio = (myindex % ganesha_cluster_frontend_ips|length) + loop.index0 %}
@@ -58,6 +56,7 @@
       {%    else %}
           priority {{ 100 }}
       {%    endif %}
+          state {{ state }}
           advert_int 1
           unicast_src_ip {{ ganesha_cluster_keepalived_unicast_src_ip|default(ansible_default_ipv4.address) }}
           unicast_peer {
@@ -149,7 +148,7 @@
     dest: /etc/ganesha/instance_list
     content: |
       {% for ip in ganesha_cluster_frontend_ips %}
-      {{ 'ga'+loop.index|string }}
+      {{ 'ga'+loop.index|string }} {{ ip }}
       {% endfor %}
 
 # ganesha configs for each instance 

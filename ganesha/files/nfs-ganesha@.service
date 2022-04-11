@@ -23,7 +23,8 @@ Type=forking
 EnvironmentFile=-/etc/ganesha/ganesha-%i.env
 ExecStart=/bin/bash -c "${NUMACTL} ${NUMAOPTS} /usr/bin/ganesha.nfsd ${OPTIONS} ${EPOCH}"
 ExecReload=/bin/kill -HUP $MAINPID
-ExecStop=/usr/bin/dbus-send --system   --dest=%i.org.ganesha.nfsd --type=method_call /org/ganesha/nfsd/admin org.ganesha.nfsd.admin.shutdown
+#ExecStop=/usr/bin/dbus-send --system   --dest=%i.org.ganesha.nfsd --type=method_call /org/ganesha/nfsd/admin org.ganesha.nfsd.admin.shutdown
+ExecStop=/bin/bash -c "/usr/local/bin/ganesha-keepalived.sh enforce --instance %i;/usr/bin/dbus-send --system   --dest=%i.org.ganesha.nfsd --type=method_call /org/ganesha/nfsd/admin org.ganesha.nfsd.admin.shutdown"
 #ExecStop=/bin/kill $MAINPID
 
 [Install]
