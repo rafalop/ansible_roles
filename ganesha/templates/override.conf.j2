@@ -1,0 +1,2 @@
+[Unit]
+RequiresMountsFor=/run/ganesha /var/log/ganesha /var/lib/nfs/ganesha {{ ganesha_required_mountpoints | default('') }}

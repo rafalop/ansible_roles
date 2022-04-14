@@ -1,0 +1,64 @@
+---
+- name: ensure kernel nfs service is stopped and disabled
+  systemd:
+    name: nfs-server
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: create ganesha dir
+  file:
+    path: /etc/ganesha
+    state: directory 
+    owner: root
+    group: root
+
+- name: stop and disable base ganesha service
+  systemd:
+    name: nfs-ganesha
+    state: stopped
+    enabled: no
+
+- name: systemd multi instance service
+  copy:
+    src: nfs-ganesha@.service
+    dest: /etc/systemd/system
+  register: ganesha_systemd_multi
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  when: ganesha_systemd_multi.changed
+
+- name: build env file for instance
+  copy:
+    dest: "/etc/ganesha/ganesha-{{ ganesha_instance_name }}.env"
+    content: |
+      OPTIONS="-L /var/log/ganesha/ganesha-{{ ganesha_instance_name }}.log -f /etc/ganesha/ganesha-{{ ganesha_instance_name }}.conf -p /var/run/ganesha-{{ ganesha_instance_name}}.pid -N NIV_EVENT"
+      EPOCH_EXEC="/bin/true"
+      {% if ganesha_cluster|bool %}
+      CLUSTERNAME={{ ganesha_clustername }}
+      {% endif %}
+
+- name: build ganesha.conf
+  template: 
+    dest: "/etc/ganesha/ganesha-{{ ganesha_instance_name }}.conf"
+    src: ganesha.conf.j2
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+  register: ganeshaconf
+  notify: restart keepalived
+
+## This is to setup auto restart and any required mounts
+- file:
+    state: directory
+    path: /etc/systemd/system/nfs-ganesha@.service.d
+
+- template:
+    dest: /etc/systemd/system/nfs-ganesha@.service.d/override.conf
+    src: override.conf.j2
+  notify:  reload systemd config
+
+

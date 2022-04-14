@@ -1,0 +1,56 @@
+#######################################################
+NFS_Core_Param {
+{%  for key, value in ganesha_core_params.items() %}
+{%    if 'comment' in key %}
+  #{{ value }}
+{%    else %}
+  {{ key }} = {{ value }};
+{%    endif %}
+{%  endfor %}
+}
+#######################################################
+EXPORT_DEFAULTS {
+{%  for key, value in ganesha_export_default_params.items() %}
+  {{ key }} = {{ value }};
+{%  endfor %}
+}
+#######################################################
+{%  for export in nfs_managed_exports %}
+EXPORT {
+  Export_ID = {{ loop.index }};
+  Path = {{ export.path }};
+  Pseudo = {{ export.pseudo }};
+{%    if export.ganesha_export_params is defined %}
+{%      for key, value in param.items() %}
+  {{ key }} = {{ value }};
+{%      endfor %}
+{%    endif %}
+{%    if  export.fsal is defined and export.fsal == 'ceph' %}
+  FSAL {
+    Name = CEPH;
+  }
+{%    else %}
+  FSAL {
+    Name = VFS;
+  }
+{%    endif %}
+{%    for client in export.clients %}
+  CLIENT {
+    Clients =  {{ client.addr }};
+{%      if client.ganesha_client_params is defined %}
+{%        for key, value in client.ganesha_client_params.items() %}
+    {{ key }} = {{ value }};
+{%        endfor %}
+{%      elif ganesha_client_default_params is defined %}
+{%        for key, value in ganesha_client_default_params.items() %}
+    {{ key }} = {{ value }};
+{%        endfor %}
+{%      endif %}
+  }
+{%    endfor %}
+}
+{% endfor %}
+
+#######################################################
+
+{{ ganesha_custom_configuration }}

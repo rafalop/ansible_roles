@@ -1,0 +1,9 @@
+- name: configure ganesha
+  become: true
+  hosts: nfs_cluster
+  tasks:
+    - include_role:
+        name: ganesha
+      vars:
+        ganesha_cluster: true
+
