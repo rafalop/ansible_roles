@@ -12,12 +12,13 @@
     mode: 0700
     owner: root
     group: root
+  notify: restart keepalived
 
 - name: setup keepalived 
   include_role:
     name: keepalived
   vars:
-    keepalived_config_freeform: true
+    keepalived_config_templated: false
     keepalived_systemd_overrides: |
       [Service]
       ExecStartPre=/bin/bash -c "for instance in `cat /etc/ganesha/instance_list | awk '{print $1}'`;do /usr/local/bin/ganesha-keepalived.sh reset --instance $instance;done"
@@ -40,36 +41,37 @@
         init_fail
       }
       vrrp_instance {{ instance_name }} {
-          interface {{ ganesha_cluster_keepalived_interface }}
+          interface {{ ganesha_cluster_keepalived_vrrp_interface }}
           virtual_router_id {{ 50+loop.index }}
       {%    set myindex = lookup('ansible.utils.index_of', groups.nfs_cluster, 'eq', inventory_hostname) %}
       {%      set state = 'BACKUP' %}
       {%    if myindex == loop.index0 %} 
       {%      set state = 'MASTER' %}
-          priority 250
+          #priority 250
       {%    elif myindex > ganesha_cluster_frontend_ips|length %} 
       {%      set rolling_prio = (myindex % ganesha_cluster_frontend_ips|length) + loop.index0 %}
-          priority {{ 150 + rolling_prio }}
+          #priority {{ 150 + rolling_prio }}
       {%    elif ganesha_cluster_frontend_ips|length > groups.nfs_cluster|length %} 
       {%      set rolling_prio = groups.nfs_cluster|length % loop.index %}
-          priority {{ 100 + rolling_prio  }}
+          #priority {{ 100 + rolling_prio  }}
       {%    else %}
-          priority {{ 100 }}
+          #priority {{ 100 }}
       {%    endif %}
           state {{ state }}
           advert_int 1
           unicast_src_ip {{ ganesha_cluster_keepalived_unicast_src_ip|default(ansible_default_ipv4.address) }}
           unicast_peer {
-      {%    set my_ip = ganesha_cluster_keepalived_unicast_src_ip|default(hostvars[inventory_hostname].ansible_default_ipv4.address) %}
       {%    if ganesha_cluster_keepalived_unicast_peer is defined %}
-            {{ ganesha_cluster_keepalived_unicast_peer | difference(my_ip) | join('\n') }}
+      {%      for peer in ganesha_cluster_keepalived_unicast_peer|difference(ganesha_cluster_keepalived_unicast_src_ip) %}
+            {{ peer }}
+      {%      endfor %}
       {%-    else -%}
-      {%-      for host in groups.nfs_cluster -%}
-      {%        set nextip = hostvars[host].ansible_default_ipv4.address %}
-      {%-        if nextip != my_ip %} 
+      {%-       for host in groups.nfs_cluster -%}
+      {%          set nextip = hostvars[host].ansible_default_ipv4.address %}
+      {%-         if nextip != ganesha_cluster_keepalived_unicast_src_ip %} 
             {{ nextip }}
-      {%-        endif %}
-      {%-     endfor -%}
+      {%-         endif %}
+      {%-       endfor -%}
       {%    endif %}
 
           }
@@ -77,15 +79,23 @@
               auth_type PASS
               auth_pass IWbd3nZ
           }
+
+          {%  if ganesha_cluster_keepalived_track_interfaces != [] %}
+          track_interface {
+            {%  for iface in ganesha_cluster_keepalived_track_interfaces %}
+            {{ iface }}
+            {%  endfor %}
+          }
+          {%  endif %}
       
           track_script {
               chk_{{ instance_name }}
           }
       
-          virtual_ipaddress_excluded {
+          virtual_ipaddress {
               {{ ipaddr }}
           }
-          notify_master "/usr/local/bin/ganesha-keepalived.sh master --instance {{ instance_name }}"
+          notify_master "/usr/local/bin/ganesha-keepalived.sh master --clustername {{ ganesha_clustername }} --instance {{ instance_name }}"
           notify_backup "/usr/local/bin/ganesha-keepalived.sh backup --instance {{ instance_name }}"
           notify_fault "/usr/local/bin/ganesha-keepalived.sh fault --instance {{ instance_name }}"
           notify_stop "/usr/local/bin/ganesha-keepalived.sh stop --instance {{ instance_name }}"
@@ -150,6 +160,7 @@
       {% for ip in ganesha_cluster_frontend_ips %}
       {{ 'ga'+loop.index|string }} {{ ip }}
       {% endfor %}
+  notify: restart keepalived
 
 # ganesha configs for each instance 
 - name: 'set up ganesha for {{ instance_ip }}'
@@ -162,6 +173,11 @@
       Protocols: '4'
       Bind_addr: "{{ instance_ip }}"
       Dbus_Name_Prefix: "{{ ganesha_instance_name }}"
+    ganesha_export_default_params:
+      Squash: 'No_Root_Squash'
+      SecType: 'sys'
+      Protocols: '4'
+      Attr_Expiration_Time: '0'
     ganesha_custom_configuration: |
       NFSV4 {
         RecoveryBackend = rados_cluster;
@@ -169,12 +185,19 @@
         Minor_Versions = 1,2;
         Lease_Lifetime = {{ ganesha_cluster_lease_lifetime }};
       } 
+
       RADOS_KV {
-      	userid = {{ ganesha_cluster_userid }};
-      	ceph_conf = {{ ganesha_cluster_cephconf }};
-      	nodeid = {{ ganesha_instance_name }};
-      	namespace = {{ ganesha_cluster_namespace }};
+        userid = {{ ganesha_cluster_userid }};
+        ceph_conf = {{ ganesha_cluster_cephconf }};
+        nodeid = {{ ganesha_instance_name }};
+        namespace = {{ ganesha_cluster_namespace }};
         pool = {{ ganesha_cluster_pool }};
+      }
+      ### CephFS tuning (already does alot of caching)
+      CACHE_INODE {
+        Dir_Chunk = 0;
+        NParts = 1;
+        Cache_Size = 1;
       }
   loop: "{{ ganesha_cluster_frontend_ips }}"
   loop_control:

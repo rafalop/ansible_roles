@@ -1,8 +1,2 @@
-[Service]
-Restart=on-failure
-StartLimitInterval=600
-StartLimitBurst=3
-Environment="NOFILE=1048576"
-
 [Unit]
 RequiresMountsFor=/run/ganesha /var/log/ganesha /var/lib/nfs/ganesha {{ ganesha_required_mountpoints | default('') }}

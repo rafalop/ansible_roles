@@ -57,6 +57,7 @@ Optional parameters:
   --fault-interval {INT}  time in sec to wait between attempting to restart ganesha after a fault (default $FAULT_INTERVAL)
   --fsal {vfs|cephfs}  the FSAL used for exports (defaults $FSAL)
   --logfile {/path/to/log}}  log file to use (default $LOGFILE)
+  --clustername {STRING}  hostname to set (default $CLUSTERNAME)
 "
 }
 
@@ -79,6 +80,9 @@ do
     ;;
     "--fsal")
         FSAL=${args[$pos]}
+    ;;
+    "--clustername")
+        CLUSTERNAME=${args[$pos]}
     ;;
     "-h")
         print_help
@@ -119,6 +123,10 @@ function fail_instance() {
   echo $((${MAX_FAILS}+1)) > ${FC_FILE}
   echo "failed" > ${STATE_FILE}
   systemctl stop nfs-ganesha@${INSTANCE}
+  if [[ "$1" != "" ]]
+  then 
+    echo "failed instance manually due to $1"
+  fi
 }
 
 function reset_instance_failures() {
@@ -130,14 +138,32 @@ function trigger_grace() {
   $GRG_CMD start $INSTANCE
 }
 
-function set_enforce() {
+function unset_enforce() {
+  while ! $GRG_CMD dump | grep -v NE
+  do
+    sleep 1
+  done
+  notme=""
   for instance in `cat $INSTANCE_LIST | awk '{print $1}'`
   do
     if [[ "$instance" != "$INSTANCE" ]]
     then
-      ($GRG_CMD dump $instance | grep $instance | grep E) || ($GRG_CMD enforce $instance && logger "setting enforce flag for $instance")
+      ($GRG_CMD dump $instance | grep $instance | grep E) || notme="$notme $instance" 
     fi 
   done 
+  $GRG_CMD noenforce $notme && logger "unsetting enforce flag for $notme"
+}
+
+function set_enforce() {
+  notme=""
+  for instance in `cat $INSTANCE_LIST | awk '{print $1}'`
+  do
+    if [[ "$instance" != "$INSTANCE" ]]
+    then
+      ($GRG_CMD dump $instance | grep $instance | grep E) || notme="$notme $instance" 
+    fi 
+  done 
+  $GRG_CMD enforce $notme && logger "setting enforce flag for $notme"
 }
 
 function check_instance() {
@@ -153,7 +179,7 @@ function increment_failcount() {
   failcount=`cat $FC_FILE`
   failcount=$((${failcount}+1))
   echo $failcount > $FC_FILE
-  logger "instance has recorded $failcount faults"
+  logger "instance has recorded $failcount failures"
 }
 
 function check_instance_failed (){
@@ -161,7 +187,7 @@ function check_instance_failed (){
   if [[ $failcount -gt $MAX_FAILS ]]
   then
     echo "failed" > $STATE_FILE
-    logger "nfs-ganesha service has exceeded maximum allowed failures ($MAX_FAILS) and will not be auto started again. Check ganesha instance logs for errors and use '$0 reset --instance $INSTANCE' or restart keepalived if you want to try starting again."
+    logger "nfs-ganesha service has failed and will not be auto started again. Check ganesha instance logs for errors and use '$0 reset --instance $INSTANCE' or restart keepalived if you want to try starting again."
     exit 1
   fi
 }
@@ -202,8 +228,8 @@ function test_exports() {
     test -d $e && test -x $e
     if [[ $? -ne 0 ]]
     then
-      logger "Error with export ${e}, check the directory exists and is accessible. Failing instance ${INSTANCE} due to bad export dir."
-      fail_instance
+      logger "Error with export ${e}, check the directory exists and is accessible, forcing failure of instance ${INSTANCE}."
+      fail_instance "issue with mount point"
       exit 1
     fi
   done
@@ -257,25 +283,33 @@ function keepalived_stop() {
 
 
 function keepalived_master() {
-  logger "starting MASTER routine"
+  logger "running MASTER routine"
   check_instance_failed
+  set_enforce
   set_hostname
-  #set_enforce
   if [[ "$FSAL" == "vfs" ]]; then test_exports; fi
   ## Wait some time in case keepalived flaps and moves IP addr around
   sleep $IP_FLAP_WAIT
   ipaddr=$(cat $INSTANCE_LIST | grep $INSTANCE | cut -d' ' -f2)
-  if ! ip a | grep "$ipaddr"; then logger "instance ip $ipaddr not hosted here, not starting $INSTANCE" ;exit 1; fi
+  if ! ip a | grep "$ipaddr"
+  then 
+    logger "instance ip $ipaddr not found on this host, not starting $INSTANCE" 
+    trigger_grace
+    exit 1
+  fi
   
   # Otherwise continue
-  logger "Found IP $ipaddr, starting instance" && systemctl start nfs-ganesha@${INSTANCE}
+  logger "found my IP $ipaddr on this host, starting instance" && systemctl start nfs-ganesha@${INSTANCE}
   $0 monitor --instance ${INSTANCE} &
   if [[ `ps -ef | grep "$0 monitor" | grep "$INSTANCE" | egrep -v "grep" | wc -l` -lt 1 ]]
   then
-    logger "couldn't start monitor."
+    logger "couldn't start instance monitor."
     fail_instance
+    exit 1
   fi
-  #trigger_grace
+
+  # If all goes well, clear any E flags
+  unset_enforce
 }
 
 function reset() { 

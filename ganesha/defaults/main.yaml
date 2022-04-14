@@ -6,8 +6,10 @@ ganesha_cluster_namespace: ganesha
 ganesha_cluster_pool: nfs-ganesha
 ganesha_cluster_lease_lifetime: 30
 ganesha_cluster_grace_period: 60
-ganesha_clustername: ga-cluster
+ganesha_clustername: ganesha-cluster
 ganesha_cluster_keepalived_global_defs: ''
+ganesha_cluster_keepalived_track_interfaces: []
+ganesha_cluster_keepalived_unicast_src_ip: "{{ hostvars[inventory_hostname].ansible_default_ipv4.address }}"
 
 ganesha_core_params:
   NSM_Use_Caller_Name: 'true'
@@ -26,5 +28,4 @@ ganesha_client_default_params:
 
 ganesha_custom_configuration: ''
 ganesha_cephfs_backend: 'vfs'
-
-ganesha_instance_name: "ga1"
+ganesha_instance_name: 'ga1'

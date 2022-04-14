@@ -3,3 +3,9 @@
   systemd:
     name: dbus
     state: restarted
+
+- name: restart keepalived
+  systemd:
+    name: keepalived
+    state: restarted
+  when: ganesha_cluster|bool

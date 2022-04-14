@@ -13,7 +13,7 @@
     owner: root
     group: root
 
-- name: stop and disable base haproxy service
+- name: stop and disable base ganesha service
   systemd:
     name: nfs-ganesha
     state: stopped
@@ -49,15 +49,16 @@
     mode: 0644
     backup: yes
   register: ganeshaconf
+  notify: restart keepalived
 
 ## This is to setup auto restart and any required mounts
-#- file:
-#    state: directory
-#    path: /etc/systemd/system/nfs-ganesha.service.d
-#
-#- template:
-#    dest: /etc/systemd/system/nfs-ganesha.service.d/override.conf
-#    src: override.conf.j2
-#  notify:  reload systemd config
+- file:
+    state: directory
+    path: /etc/systemd/system/nfs-ganesha@.service.d
+
+- template:
+    dest: /etc/systemd/system/nfs-ganesha@.service.d/override.conf
+    src: override.conf.j2
+  notify:  reload systemd config
 
 
