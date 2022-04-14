@@ -4,7 +4,6 @@ keepalived_router_id: "kd1"
 keepalived_app: haproxy
 keepalived_chk_script: "/usr/bin/killall -0 {{ keepalived_app }}"
 keepalived_config_templated: true
-keepalived_config_freeform: false
 keepalived_config: ''
 keepalived_instances: []
 keepalived_systemd_overrides: ''

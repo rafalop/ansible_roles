@@ -20,7 +20,7 @@
     dest: /etc/keepalived/keepalived.conf
     backup: yes
   notify: restart keepalived
-  when: keepalived_config_freeform|bool
+  when: not keepalived_config_templated|bool
 
 - name: apply overrides
   block:
