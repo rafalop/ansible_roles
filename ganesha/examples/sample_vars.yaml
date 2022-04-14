@@ -1,0 +1,13 @@
+nfs_managed_exports:
+  - path: /mnt/cephfs
+    pseudo: /mnt/cephfs
+    fsal: 'vfs'
+    clients: 
+      - addr: '*'
+
+ganesha_cluster_frontend_ips: [10.10.1.29, 10.10.1.30, 10.10.1.31] # Floating IPs
+ganesha_cluster_keepalived_unicast_peer: [10.10.1.12, 10.10.1.13, 10.10.1.14] # Fixed host IPs
+ganesha_cluster_keepalived_vrrp_interface: eth0
+ganesha_cluster_keepalived_track_interfaces: [eth0] # Track one or more IFs for failures
+ganesha_clustername: 'ceph-si-ganesha' # Hosts will all get this hostname
+ganesha_required_mountpoints: '/mnt/cephfs' # Space delimited string of mounts added to systemd required mounts for the service
