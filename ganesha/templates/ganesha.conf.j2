@@ -28,6 +28,12 @@ EXPORT {
 {%    if  export.fsal is defined and export.fsal == 'ceph' %}
   FSAL {
     Name = CEPH;
+{%      if export.cephx_user is defined %}
+    User_id = {{ export.cephx_user }};
+{%      endif %}
+{%      if export.cephx_key is defined %}
+    Secret_Access_key = "{{ export.cephx_key }}";
+{%      endif %}
   }
 {%    else %}
   FSAL {
