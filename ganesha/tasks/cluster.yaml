@@ -76,7 +76,7 @@
 
           }
           authentication {
-              auth_type PASS
+              auth_type {{ ganesha_cluster_keepalived_auth_type }}
               auth_pass IWbd3nZ
           }
 
