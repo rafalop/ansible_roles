@@ -4,7 +4,7 @@
   include_role:
     name: keepalived
   vars:
-    keepalived_config_freeform: true
+    keepalived_config_templated: false
     keepalived_config: |
       global_defs {
           smtp_server "{{ keepalived_smtp_server }}"
