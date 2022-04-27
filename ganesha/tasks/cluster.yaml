@@ -14,6 +14,12 @@
     group: root
   notify: restart keepalived
 
+- name: update hosts file with clustername
+  lineinfile:
+    line: "{{ item }} {{ ganesha_clustername }}"
+    path: /etc/hosts
+  with_items: "{{ ganesha_cluster_frontend_ips }}"
+
 - name: setup keepalived 
   include_role:
     name: keepalived
