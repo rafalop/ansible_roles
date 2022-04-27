@@ -7,8 +7,12 @@
     keepalived_config_templated: false
     keepalived_systemd_overrides: |
       [Service]
-      ExecStartPre=/bin/bash -c "{{ haproxy_cluster_keepalived_pre }}"
-      ExecStopPost=/bin/bash -c "{{ haproxy_cluster_keepalived_post }}"
+      {% for cmd in haproxy_cluster_keepalived_pre %}
+      ExecStartPre=/bin/bash -c "{{ cmd }}"
+      {% endfor %}
+      {% for cmd in haproxy_cluster_keepalived_post %}
+      ExecStopPost=/bin/bash -c "{{ cmd }}"
+      {% endfor %}
     keepalived_config: |
       global_defs {
           smtp_server "{{ keepalived_smtp_server }}"
