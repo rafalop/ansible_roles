@@ -52,7 +52,7 @@
     systemctl stop ceph-radosgw.target
     for i in `seq 1 {{ ceph_rgw_instances_per_host }}`
     do
-      CEPHX_USER={{ ceph_rgw_instance_prefix }}`hostname|cut -d'.' -f1`-$i
+      CEPHX_USER={{ ceph_rgw_instances_prefix }}`hostname|cut -d'.' -f1`-$i
       systemctl stop ceph-radosgw@${CEPHX_USER}
       pkill radosgw
       rm -rf /var/lib/ceph/radosgw/ceph-${CEPHX_USER}
