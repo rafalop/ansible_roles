@@ -7,3 +7,6 @@ haproxy_frontend_bind_ip: "{{ ansible_default_ipv4.address }}"
 haproxy_configuration_file:
 haproxy_instance_name: 1
 haproxy_cluster: false
+haproxy_cluster_keepalived_pre: []
+haproxy_cluster_keepalived_post: []
+
