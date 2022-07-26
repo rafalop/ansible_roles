@@ -75,7 +75,7 @@
           virtual_ipaddress {
               {{ ipaddr }}
           }
-          notify_master "/usr/bin/systemctl start haproxy@{{ instance_name }}"
+          notify_master "/usr/bin/bash -c '/usr/bin/sleep 1 && /usr/bin/systemctl start haproxy@{{ instance_name }}'"
           notify_backup "/usr/bin/systemctl stop haproxy@{{ instance_name }}"
           notify_fault "/usr/bin/systemctl stop haproxy@{{ instance_name }}"
       }
