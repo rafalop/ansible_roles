@@ -11,26 +11,31 @@
 
 - name: add docker apt key
   apt_key:
-    url: https://download.docker.com/linux/debian/gpg
-  register: add_docker_apt_key
+    url: https://download.docker.com/linux/{{ ansible_lsb.id|lower }}/gpg
+  notify: apt update
+
+- name: Gather the package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: get dpkg architecture
+  shell: dpkg --print-architecture
+  changed_when: false
+  register: dpkg_arch
 
 - name: prepare repo line
-  shell: |
-    echo "deb [arch=$(dpkg --print-architecture)] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
-  register: repo_line
-  changed_when: false
+  ansible.builtin.set_fact:
+    repo_line: "deb [arch={{ dpkg_arch.stdout }}] https://download.docker.com/linux/{{ ansible_lsb.id|lower }} {{ ansible_lsb.codename }} stable"
 
 - name: add docker repo
   copy:
     dest: /etc/apt/sources.list.d/docker.list
     content: |
-      {{ repo_line.stdout }}
-  register: add_docker_repo
+      {{ repo_line }}
+  notify: apt update
 
-- name: apt update
-  apt:
-    update_cache: true
-  when: add_docker_apt_key.changed or add_docker_repo.changed
+- name: Force handlers to run 'apt update' if needed
+  ansible.builtin.meta: flush_handlers
 
 - name: add docker packages
   include_role:
