@@ -2,6 +2,7 @@
 - name: check for nerdctl
   shell: which nerdctl
   failed_when: false
+  changed_when: false
   register: nerdctl_exists
 
 - block:
