@@ -1,5 +1,8 @@
 ---
-- include_tasks: docker.yaml
+## Don't worry about docker, we'll just use containerd with nerdctl
+#- include_tasks: docker.yaml
+
+- include_tasks: nerd.yaml
 
 - name: check node in cluster
   shell: |

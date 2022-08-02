@@ -1,4 +1,6 @@
 ---
+- include_tasks: docker.yaml
+
 - name: check for k3s
   shell: /usr/bin/which k3s
   register: k3s_installed
@@ -12,7 +14,7 @@
         dest: /tmp/k3s_bootstrap.sh
     
     - name: run k3s installer
-      shell: /bin/sh /tmp/k3s_bootstrap.sh {{ '--docker' if k3s_docker == true }}
+      shell: /bin/sh /tmp/k3s_bootstrap.sh
   when: k3s_installed.rc != 0
 
 - name: check for helm
