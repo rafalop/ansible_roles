@@ -1,5 +1,8 @@
 ---
-- include_tasks: docker.yaml
+## Don't worry about docker, we'll just use containerd with nerdctl
+#- include_tasks: docker.yaml
+
+- include_tasks: nerd.yaml
 
 - name: check for k3s
   shell: /usr/bin/which k3s
@@ -24,11 +27,6 @@
   changed_when: false
 
 - block:
-    - name: install curl and wget
-      include_role:
-        name: packages
-      vars:
-        packages_list: [curl, wget]
     - name: download helm installer
       get_url:
         url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
