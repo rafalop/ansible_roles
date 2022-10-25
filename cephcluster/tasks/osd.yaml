@@ -60,19 +60,26 @@
 
 - block:
     - name: install bcachectl
+      package:
+        name: bcachectl
+        state: present
+  rescue:
+    - name: install bcachectl (upstream)
       shell: 
         cmd: |
           curl https://raw.githubusercontent.com/rafalop/bcachectl/main/scripts/install_bcachectl.sh | bash -s -- reinstall
-          cp /var/tmp/.bcachectl_install/bcachectl/scripts/ceph-bcache.sh /usr/local/bin/
-          chmod u+x /usr/local/bin/ceph-bcache.sh
+          cp /var/tmp/.bcachectl_install/bcachectl/scripts/ceph-bcache.sh /usr/local/bin/ceph-bcache
+          chmod u+x /usr/local/bin/ceph-bcache
         executable: /bin/bash
-    - include_role:
-        name: packages
-      vars:
-        packages_list: [bcache-tools, parted]
-    - name: load bcache kmod
-      modprobe:
-        name: bcache
+
+- include_role:
+    name: packages
+  vars:
+    packages_list: [bcache-tools, parted, gdisk]
+
+- name: load bcache kmod
+  modprobe:
+    name: bcache
   when: ceph_bcache|bool
 
 - block:
@@ -129,21 +136,11 @@
       {%    else %}
       {%      set prefix = '' %}
       {%    endif %}
-      # Cases without cache (use ceph-volume directly)
-      {%    if ceph_osd_cache_size == 0 or ceph_osd_cache_size == 'none' or (not ceph_bcache|bool and not ceph_lvmcache|bool) %}
-      {%      set deploy_cmd = 'ceph-volume lvm create --data ' + prefix+osd.drive  + ' --osd-id=' + osd_id|string %}
-      # wal == 0 && db == 0 && cache == 0 (all not set, plain hdd OSD) do nothing else
-      # db != 0 (db specified)
-      {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
-      {%        set deploy_cmd = deploy_cmd+ ' --block.db ' + prefix+osd.db + ' --block.db-size ' + ceph_osd_db_size %}
+      {%      set deploy_cmd = ' --doit --data-devices ' + prefix+osd.drive + ' --cv-args --osd-id=' + osd_id|string %}
+      # cache != 0 (cache specified)
+      {%      if ceph_osd_cache_size != 0 and ceph_osd_cache_size != 'none' %}
+      {%        set deploy_cmd = deploy_cmd + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size + ' --cache-mode ' + ceph_osd_cache_mode + ' --seq-cutoff ' + ceph_osd_cache_seq_cutoff %} 
       {%      endif %}
-      # wal != 0 (wal specified)
-      {%      if ceph_osd_wal_size != 0 and ceph_osd_wal_size != 'none' %}
-      {%        set deploy_cmd = deploy_cmd + ' --block.wal ' + prefix+osd.wal + ' --block.wal-size ' + ceph_osd_wal_size %}
-      {%      endif %}
-      # Cases with cache (use ceph-bcache.sh or ceph-lvmcache.sh)
-      {%    else %}
-      {%      set deploy_cmd = ' --doit --cache-mode ' + ceph_osd_cache_mode + ' --seq-cutoff ' + ceph_osd_cache_seq_cutoff + ' --data-devices ' + prefix+osd.drive + ' --cache-device ' + prefix+osd.cache + ' --cache-size ' + ceph_osd_cache_size + ' --cv-args --osd-id=' + osd_id|string %}
       # db != 0 (db specified)
       {%      if ceph_osd_db_size != 0 and ceph_osd_db_size != 'none' %}
       {%        set deploy_cmd = deploy_cmd + ' --db-device ' + prefix+osd.db + ' --db-size ' + ceph_osd_db_size %} 
@@ -155,9 +152,8 @@
       {%      if ceph_lvmcache|bool %}
       {%        set deploy_cmd = 'ceph-lvmcache.sh' + deploy_cmd %}
       {%      else %}
-      {%        set deploy_cmd = 'ceph-bcache.sh' + deploy_cmd %}
+      {%        set deploy_cmd = 'ceph-bcache' + deploy_cmd %}
       {%      endif %}
-      {%    endif %}
       ret=0
       if [[ ! `ceph osd find {{ osd_id }}` ]] && [[ ! `cat /var/lib/ceph/osd/ceph-{{ osd_id }}/whoami` ]] 
       then
@@ -168,8 +164,11 @@
         echo "OSD {{ osd_id }} (drive {{ prefix+osd.drive }}) already deployed."
       fi
       {%  endfor %}
+      ceph-volume lvm activate --all
       exit $ret
-  when: not ceph_opencas|bool
+  when: 
+    - ceph_bcache|bool
+    - not ceph_opencas|bool
 
 - block: 
   - name: install opencas
@@ -260,4 +259,46 @@
         {% endfor %}
         exit $ret
   when: ceph_opencas|bool
+
+- block: 
+    - set_fact:
+        ceph_osd_devices: []
+    - set_fact:
+        ceph_osd_devices: "{{ ceph_osd_devices + [item.drive] }}"
+      with_items: "{{ ceph_osd_layout }}"
+    - include_role:
+        name: shellscript
+      vars:
+        script: |
+            if ! timeout 5 ceph -s
+            then
+              echo "Cannot connect to ceph cluster, not deploying OSDs."
+              exit 100
+            fi
+            if ! timeout 5 ceph -n client.bootstrap-osd -k /var/lib/ceph/bootstrap-osd/{{ ceph_cluster_name }}.keyring
+            then
+              echo "Cannot connect to ceph cluster using bootstrap-osd key."
+              exit 100
+            fi
+            {% set deploy_cmd = 'ceph-volume lvm batch --yes '+ceph_osd_devices | join(" ") %}
+            {%  if ceph_db_devices is defined %}
+            {%    set deploy_cmd = deploy_cmd + ' --db-devices ' + ceph_db_devices|join(" ") %}
+            {%  endif %}
+            {%  if ceph_wal_devices is defined and ceph_wal_devices != ceph_db_devices %}
+            {%    set deploy_cmd = deploy_cmd + ' --wal-devices ' + ceph_wal_devices|join(" ") %}
+            {%  endif %}
+            {%  if ceph_db_devices is defined and ceph_db_size is defined %}
+            {%    set deploy_cmd = deploy_cmd + ' --block-db-size ' + ceph_db_size %}
+            {%  endif %}
+            {%  if ceph_wal_devices is defined and ceph_wal_size is defined %}
+            {%    set deploy_cmd = deploy_cmd + ' --block-wal-size ' + ceph_wal_size %}
+            {%  endif %}
+            echo 'DEPLOY COMMAND: {{ deploy_cmd }}'
+            {{ deploy_cmd }}
+            exit $?
+  tags: build
+  when: 
+    - not ceph_bcache|bool
+    - not ceph_opencas|bool
+
 

@@ -1,0 +1,47 @@
+# Only used for setting up test cluster with OSDs using directories
+- name: install packages
+  include_role:
+    name: packages
+  vars:
+    packages_list:
+      - "{{ 'ceph-osd'+ceph_package_version }}"
+
+- name: setup osds in directories
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      ret=0
+      # test for osd root
+      OSD_ROOT={{ ceph_osd_directories_root }}
+      OSD_COUNT={{ ceph_osd_directories_num_osd }}
+      if [[ ! -d ${OSD_ROOT} ]]; then
+        echo "directory ${OSD_ROOT} does not exist, exiting."
+        exit 100
+      fi
+      # for range osd number
+      for i in `seq 0 ${OSD_COUNT}`; do
+      # test for keyring;skip
+        if [[ -s ${OSD_ROOT}/osd.${i}/keyring ]]; then
+          echo "osd.$i appears to already be deployed, skipping"
+          continue
+        fi
+      # create dir on osd root
+        mkdir ${OSD_ROOT}/osd.${i}
+      # create osd
+        if ! ceph osd ls | egrep "^${i}$";then
+          ceph osd create $i
+        fi
+      # create keyring
+        ceph auth get-or-create osd.${i} mon 'allow profile osd' mgr 'allow profile osd' osd 'allow *' -o ${OSD_ROOT}/osd.${i}/keyring
+      # create dir /var/lib/ceph 
+        mkdir /var/lib/ceph/osd/ceph-$i
+      # bind mount
+        mount --bind ${OSD_ROOT}/osd.${i} /var/lib/ceph/osd/ceph-$i -o noatime
+      # mkfs osd
+        ceph-osd -i ${i} --mkfs --osd-objectstore filestore
+      # chown ceph
+        chown -R ceph:ceph /var/lib/ceph/osd/ceph-$i
+      # start osd 
+        systemctl start ceph-osd@$i
+      done

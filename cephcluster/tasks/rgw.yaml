@@ -10,7 +10,7 @@
   vars:
     script: |
       ret=0
-      for i in `seq 0 {{ ceph_rgw_instances_per_host }}`
+      for i in `seq 0 {{ ceph_rgw_instances_per_host-1 }}`
       do
         CEPHX_USER={{ ceph_rgw_instances_prefix }}`hostname|cut -d'.' -f1`-$i
         RGW_DIR=/var/lib/ceph/radosgw/ceph-${CEPHX_USER}

@@ -5,8 +5,8 @@ ceph_package_version: ""
 destroy_existing: false
 destroy_remove_packages: false
 ceph_custom: "echo 'No custom config is defined.'"
-ceph_bcache: false
 ceph_lvmcache: false
+ceph_bcache: true
 ceph_osd_cache_size: 0
 ceph_osd_db_size: 0
 ceph_osd_wal_size: 0

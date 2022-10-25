@@ -151,7 +151,7 @@
           vgscan
           lvscan
           echo "Destroying any bcache devices."
-          blkid -t TYPE="bcache" -o device | xargs -I {} bash -c 'bcachectl unregister {};bcachectl stop {};sleep 1;dd if=/dev/zero of={} bs=1M count=1 conv=sync'
+          blkid -t TYPE="bcache" -o device | xargs -I {} bash -c 'bcachectl unregister {};sleep 1;dd if=/dev/zero of={} bs=1M count=1'
 
     - name: 'wipe drives'
       include_role:
@@ -170,6 +170,7 @@
           then
             echo "Wiping {{ dev }}"
             sgdisk -Z {{ dev }}
+            dd if=/dev/zero of={{ dev }} bs=1024 count=1 oflag=direct
             partx -a {{ dev }}
             echo {{ dev }} >> $tracker
           else
@@ -194,5 +195,25 @@
     - "'osd' in group_names"
     - destroy_existing|bool
 
-
-
+- name: destroy directory osds 
+  include_role:
+    name: shellscript
+  vars:
+    script: |
+      echo "Removing existing osds."
+      systemctl stop ceph-osd.target
+      pkill ceph-osd
+      if timeout 3 ceph -s; then
+        ceph osd ls-tree `hostname` | xargs -I {} bash -c 'systemctl stop ceph-osd@{};ceph osd down osd.{};ceph osd crush remove osd.{};ceph auth del osd.{};ceph osd rm osd.{}'
+      fi
+      mount | grep /var/lib/ceph | awk '{print $3}' | xargs -I {} umount {}
+      rm -rf {{ ceph_osd_directories_root }}/*
+      {% if destroy_remove_packages %}
+      apt -y remove ceph*
+      apt -y remove librados*
+      apt -y remove librbd*
+      apt -y autoremove
+      {% endif %}
+  when:
+    - destroy_existing|bool
+    - "'osd_directories' in group_names"
