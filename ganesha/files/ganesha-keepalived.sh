@@ -6,7 +6,8 @@ MODE=''
 INSTANCE=''
 INSTANCE_LIST=/etc/ganesha/instance_list
 STATES_DIR='/var/run'
-GRG_CEPH_CONF='/etc/ceph/ceph.conf' GRG_USER='admin'
+GRG_CEPH_CONF='/etc/ceph/ceph.conf'
+GRG_USER='admin'
 GRG_NAMESPACE='ganesha'
 GRG_POOL='nfs-ganesha'
 MAX_FAILS=3
