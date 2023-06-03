@@ -2,6 +2,7 @@
 # if you want a particular ceph version. eg. ceph_pacakge_version: '=14.2.22-blah'
 ceph_package_version: ""
 
+ceph_repo: ""
 destroy_existing: false
 destroy_remove_packages: false
 ceph_custom: "echo 'No custom config is defined.'"
